@@ -4,6 +4,10 @@
 #import <YouTubeHeader/YTIElementRenderer.h>
 #import <YouTubeHeader/YTIMenuItemSupportedRenderers.h>
 
+#define DidApplyDefaultSettingsKey @"YTL_DidApplyDefaultSettings"
+#define YouSpeedEnabledKey @"YTVideoOverlay-YouSpeed-Enabled"
+#define YouSpeedButtonPositionKey @"YTVideoOverlay-YouSpeed-Position"
+
 #define _LOC(b, x) [b localizedStringForKey:x value:nil table:nil]
 
 %hook SRLRegistry
@@ -57,3 +61,13 @@
 }
 
 %end
+
+%ctor {
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    if (![defaults boolForKey:DidApplyDefaultSettingsKey]) {
+        [defaults setBool:YES forKey:DidApplyDefaultSettingsKey];
+        [defaults setBool:YES forKey:YouSpeedEnabledKey];
+        [defaults setInteger:1 forKey:YouSpeedButtonPositionKey];
+    }
+    %init;
+}
