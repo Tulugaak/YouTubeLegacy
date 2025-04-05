@@ -4,7 +4,12 @@
 #import <YouTubeHeader/SRLRegistry.h>
 #import <YouTubeHeader/YTCommandResponderEvent.h>
 #import <YouTubeHeader/YTIElementRenderer.h>
+#import <YouTubeHeader/YTIInlinePlaybackRenderer.h>
 #import <YouTubeHeader/YTIMenuItemSupportedRenderers.h>
+#import <YouTubeHeader/YTIPlaylistPanelRenderer.h>
+#import <YouTubeHeader/YTIPlaylistPanelVideoRenderer.h>
+#import <YouTubeHeader/YTPlaylistPanelProminentThumbnailVideoCellController.h>
+#import <YouTubeHeader/YTPlaylistPanelSectionController.h>
 #import <YouTubeHeader/YTVideoElementCellController.h>
 #import <YouTubeHeader/YTVideoWithContextNode.h>
 
@@ -24,7 +29,7 @@
 
 %end
 
-static YTICommand *createRelevantCommand(YTIElementRenderer *elementRenderer) {
+static YTICommand *createRelevantCommandFromElementRenderer(YTIElementRenderer *elementRenderer) {
     YTICommand *command = nil;
     NSString *description = [elementRenderer description];
     NSRange range = [description rangeOfString:@"/vi/"];
@@ -46,24 +51,61 @@ static YTICommand *createRelevantCommand(YTIElementRenderer *elementRenderer) {
     return command;
 }
 
+static YTICommand *createRelevantCommandFromPlaylistPanelVideoRenderer(YTIPlaylistPanelVideoRenderer *playlistPanelVideoRenderer, id firstResponder) {
+    NSString *videoID = playlistPanelVideoRenderer.videoId;
+    HBLogDebug(@"videoID: %@", videoID);
+    YTPlaylistPanelProminentThumbnailVideoCellController *cellController = (YTPlaylistPanelProminentThumbnailVideoCellController *)firstResponder;
+    YTPlaylistPanelSectionController *sectionController = cellController.parentResponder;
+    YTIPlaylistPanelRenderer *panelRenderer = (YTIPlaylistPanelRenderer *)[sectionController renderer];
+    NSUInteger index = [panelRenderer.contentsArray indexOfObjectPassingTest:^BOOL(YTIPlaylistPanelRenderer_PlaylistPanelVideoSupportedRenderers *obj, NSUInteger idx, BOOL *stop) {
+        if (obj.playlistPanelVideoRenderer == playlistPanelVideoRenderer) {
+            *stop = YES;
+            return YES;
+        }
+        return NO;
+    }];
+    NSString *playlistID = panelRenderer.playlistId;
+    HBLogDebug(@"playlistID: %@", playlistID);
+    return [%c(YTICommand) watchNavigationEndpointWithPlaylistID:playlistID videoID:videoID index:index watchNextToken:nil];
+}
+
+static YTICommand *createRelevantCommandFromInlinePlaybackRenderer(YTIInlinePlaybackRenderer *inlinePlaybackRenderer) {
+    NSString *videoID = inlinePlaybackRenderer.videoId;
+    HBLogDebug(@"videoID: %@", videoID);
+    return [%c(YTICommand) watchNavigationEndpointWithVideoID:videoID];
+}
+
+static YTIMenuItemSupportedRenderers *createPlayMenuRenderer(YTICommand *command) {
+    NSString *playText = _LOC([NSBundle mainBundle], @"mdx.actionview.play");
+    YTIIcon *icon = [%c(YTIIcon) new];
+    icon.iconType = YT_PLAY_ALL;
+    YTIMenuNavigationItemRenderer *navigationItemRenderer = [%c(YTIMenuNavigationItemRenderer) new];
+    navigationItemRenderer.menuItemIdentifier = @"PlayVideo";
+    navigationItemRenderer.navigationEndpoint = command;
+    navigationItemRenderer.icon = icon;
+    navigationItemRenderer.text = [%c(YTIFormattedString) formattedStringWithString:playText];
+    YTIMenuItemSupportedRenderers *menuItemRenderers = [%c(YTIMenuItemSupportedRenderers) new];
+    menuItemRenderers.menuNavigationItemRenderer = navigationItemRenderer;
+    return menuItemRenderers;
+}
+
 %hook YTMenuController
 
-- (NSMutableArray *)actionsForRenderers:(NSMutableArray <YTIMenuItemSupportedRenderers *> *)renderers fromView:(UIView *)view entry:(YTIElementRenderer *)entry shouldLogItems:(BOOL)shouldLogItems firstResponder:(id)firstResponder {
-    if ([entry isKindOfClass:%c(YTIElementRenderer)]) {
-        YTICommand *command = createRelevantCommand(entry);
-        if (command) {
-            NSString *playText = _LOC([NSBundle mainBundle], @"mdx.actionview.play");
-            YTIIcon *icon = [%c(YTIIcon) new];
-            icon.iconType = YT_PLAY_ALL;
-            YTIMenuNavigationItemRenderer *navigationItemRenderer = [%c(YTIMenuNavigationItemRenderer) new];
-            navigationItemRenderer.menuItemIdentifier = @"PlayVideo";
-            navigationItemRenderer.navigationEndpoint = command;
-            navigationItemRenderer.icon = icon;
-            navigationItemRenderer.text = [%c(YTIFormattedString) formattedStringWithString:playText];
-            YTIMenuItemSupportedRenderers *menuItemRenderers = [%c(YTIMenuItemSupportedRenderers) new];
-            menuItemRenderers.menuNavigationItemRenderer = navigationItemRenderer;
-            [renderers insertObject:menuItemRenderers atIndex:0];
-        }
+- (NSMutableArray *)actionsForRenderers:(NSMutableArray <YTIMenuItemSupportedRenderers *> *)renderers fromView:(UIView *)view entry:(id)entry shouldLogItems:(BOOL)shouldLogItems firstResponder:(id)firstResponder {
+    HBLogDebug(@"actionsForRenderers: %@", renderers);
+    HBLogDebug(@"view: %@", view);
+    HBLogDebug(@"entry: %@", entry);
+    HBLogDebug(@"firstResponder: %@", firstResponder);
+    YTICommand *command = nil;
+    if ([entry isKindOfClass:%c(YTIElementRenderer)])
+        command = createRelevantCommandFromElementRenderer(entry);
+    else if ([entry isKindOfClass:%c(YTIPlaylistPanelVideoRenderer)])
+        command = createRelevantCommandFromPlaylistPanelVideoRenderer(entry, firstResponder);
+    else if ([entry isKindOfClass:%c(YTIInlinePlaybackRenderer)])
+        command = createRelevantCommandFromInlinePlaybackRenderer(entry);
+    if (command) {
+        YTIMenuItemSupportedRenderers *menuItemRenderers = createPlayMenuRenderer(command);
+        [renderers insertObject:menuItemRenderers atIndex:0];
     }
     return %orig(renderers, view, entry, shouldLogItems, firstResponder);
 }
@@ -78,7 +120,7 @@ static YTICommand *createRelevantCommand(YTIElementRenderer *elementRenderer) {
     if ([parentNode isKindOfClass:%c(YTVideoWithContextNode)]) {
         YTVideoElementCellController *cellController = (YTVideoElementCellController *)parentNode.parentResponder;
         YTIElementRenderer *renderer = [cellController elementEntry];
-        YTICommand *command = createRelevantCommand(renderer);
+        YTICommand *command = createRelevantCommandFromElementRenderer(renderer);
         if (command) {
             UIView *view = nodeController.node.view;
             YTCommandResponderEvent *event = [%c(YTCommandResponderEvent) eventWithCommand:command fromView:view entry:renderer sendClick:NO firstResponder:cellController];
