@@ -1,5 +1,7 @@
 #import <HBLog.h>
+#import <YouTubeHeader/ASCollectionView.h>
 #import <YouTubeHeader/ELMNodeController.h>
+#import <YouTubeHeader/ELMNodeFactory.h>
 #import <YouTubeHeader/ELMTouchCommandPropertiesHandler.h>
 #import <YouTubeHeader/SRLRegistry.h>
 #import <YouTubeHeader/YTCommandResponderEvent.h>
@@ -14,8 +16,10 @@
 #import <YouTubeHeader/YTVideoWithContextNode.h>
 
 #define DidApplyDefaultSettingsKey @"YTL_DidApplyDefaultSettings"
+#define DidApplyDefaultSettings2Key @"YTL_DidApplyDefaultSettings2"
 #define YouSpeedEnabledKey @"YTVideoOverlay-YouSpeed-Enabled"
 #define YouSpeedButtonPositionKey @"YTVideoOverlay-YouSpeed-Position"
+#define RYDUseItsDataKey @"RYD-USE-LIKE-DATA"
 
 #define _LOC(b, x) [b localizedStringForKey:x value:nil table:nil]
 
@@ -133,12 +137,28 @@ static YTIMenuItemSupportedRenderers *createPlayMenuRenderer(YTICommand *command
 
 %end
 
+%hook YTWatchLayerViewController
+
+- (id)initWithParentResponder:(id)parentResponder {
+    self = %orig;
+    [[%c(ELMNodeFactory) sharedInstance] registerNodeClass:%c(ELMTextNode) forTypeExtension:525000000];
+    return self;
+}
+
+%end
+
 %ctor {
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     if (![defaults boolForKey:DidApplyDefaultSettingsKey]) {
         [defaults setBool:YES forKey:DidApplyDefaultSettingsKey];
         [defaults setBool:YES forKey:YouSpeedEnabledKey];
         [defaults setInteger:1 forKey:YouSpeedButtonPositionKey];
+        [defaults synchronize];
+    }
+    if (![defaults boolForKey:DidApplyDefaultSettings2Key]) {
+        [defaults setBool:YES forKey:DidApplyDefaultSettings2Key];
+        [defaults setBool:YES forKey:RYDUseItsDataKey];
+        [defaults synchronize];
     }
     %init;
 }
