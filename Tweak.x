@@ -2,18 +2,26 @@
 #import <YouTubeHeader/ASCollectionView.h>
 #import <YouTubeHeader/ELMNodeController.h>
 #import <YouTubeHeader/ELMNodeFactory.h>
+#import <YouTubeHeader/ELMTextNode.h>
 #import <YouTubeHeader/ELMTouchCommandPropertiesHandler.h>
 #import <YouTubeHeader/SRLRegistry.h>
+#import <YouTubeHeader/UIImage+YouTube.h>
 #import <YouTubeHeader/YTCommandResponderEvent.h>
 #import <YouTubeHeader/YTIElementRenderer.h>
 #import <YouTubeHeader/YTIInlinePlaybackRenderer.h>
 #import <YouTubeHeader/YTIMenuItemSupportedRenderers.h>
+#import <YouTubeHeader/YTIPivotBarItemRenderer.h>
 #import <YouTubeHeader/YTIPlaylistPanelRenderer.h>
 #import <YouTubeHeader/YTIPlaylistPanelVideoRenderer.h>
+#import <YouTubeHeader/YTPageStyleController.h>
 #import <YouTubeHeader/YTPlaylistPanelProminentThumbnailVideoCellController.h>
 #import <YouTubeHeader/YTPlaylistPanelSectionController.h>
 #import <YouTubeHeader/YTVideoElementCellController.h>
 #import <YouTubeHeader/YTVideoWithContextNode.h>
+#import <YouTubeHeader/YTPivotBarItemView.h>
+
+@interface ELMTextNode2 : ELMTextNode
+@end
 
 #define DidApplyDefaultSettingsKey @"YTL_DidApplyDefaultSettings"
 #define DidApplyDefaultSettings2Key @"YTL_DidApplyDefaultSettings2"
@@ -79,15 +87,14 @@ static YTICommand *createRelevantCommandFromInlinePlaybackRenderer(YTIInlinePlay
     return [%c(YTICommand) watchNavigationEndpointWithVideoID:videoID];
 }
 
-static YTIMenuItemSupportedRenderers *createPlayMenuRenderer(YTICommand *command) {
-    NSString *playText = _LOC([NSBundle mainBundle], @"mdx.actionview.play");
+static YTIMenuItemSupportedRenderers *createMenuRenderer(YTICommand *command, NSString *text, NSString *identifier, YTIcon iconType) {
     YTIIcon *icon = [%c(YTIIcon) new];
-    icon.iconType = YT_PLAY_ALL;
+    icon.iconType = iconType;
     YTIMenuNavigationItemRenderer *navigationItemRenderer = [%c(YTIMenuNavigationItemRenderer) new];
-    navigationItemRenderer.menuItemIdentifier = @"PlayVideo";
+    navigationItemRenderer.menuItemIdentifier = identifier;
     navigationItemRenderer.navigationEndpoint = command;
     navigationItemRenderer.icon = icon;
-    navigationItemRenderer.text = [%c(YTIFormattedString) formattedStringWithString:playText];
+    navigationItemRenderer.text = [%c(YTIFormattedString) formattedStringWithString:text];
     YTIMenuItemSupportedRenderers *menuItemRenderers = [%c(YTIMenuItemSupportedRenderers) new];
     menuItemRenderers.menuNavigationItemRenderer = navigationItemRenderer;
     return menuItemRenderers;
@@ -108,7 +115,14 @@ static YTIMenuItemSupportedRenderers *createPlayMenuRenderer(YTICommand *command
     else if ([entry isKindOfClass:%c(YTIInlinePlaybackRenderer)])
         command = createRelevantCommandFromInlinePlaybackRenderer(entry);
     if (command) {
-        YTIMenuItemSupportedRenderers *menuItemRenderers = createPlayMenuRenderer(command);
+        NSString *playText = _LOC([NSBundle mainBundle], @"mdx.actionview.play");
+        YTIMenuItemSupportedRenderers *menuItemRenderers = createMenuRenderer(command, playText, @"PlayVideo", YT_PLAY_ALL);
+        [renderers insertObject:menuItemRenderers atIndex:0];
+    }
+    if ([firstResponder isKindOfClass:%c(YTHeaderViewController)]) {
+        NSString *switchAccountText = _LOC([NSBundle mainBundle], @"sign_in_retroactive.select_another_account");
+        command = [%c(YTICommand) signInNavigationEndpoint];
+        YTIMenuItemSupportedRenderers *menuItemRenderers = createMenuRenderer(command, switchAccountText, @"SwitchAccount", 182);
         [renderers insertObject:menuItemRenderers atIndex:0];
     }
     return %orig(renderers, view, entry, shouldLogItems, firstResponder);
@@ -137,12 +151,65 @@ static YTIMenuItemSupportedRenderers *createPlayMenuRenderer(YTICommand *command
 
 %end
 
+%subclass ELMTextNode2 : ELMTextNode
+
+- (void)setElement:(id)element {
+    %orig;
+    HBLogDebug(@"setElement: %@", element);
+    YTCommonColorPalette *colorPalette = [%c(YTPageStyleController) currentColorPalette];
+    UIColor *textColor = [colorPalette textPrimary];
+    NSMutableAttributedString *attributedString = [[NSMutableAttributedString alloc] initWithAttributedString:self.attributedText];
+    attributedString.mutableString.string = @"⌛";
+    [attributedString addAttribute:NSForegroundColorAttributeName value:textColor range:NSMakeRange(0, attributedString.length)];
+    self.attributedText = attributedString.copy;
+}
+
+- (void)controllerDidApplyProperties {
+    HBLogDebug(@"controllerDidApplyProperties");
+}
+
+%end
+
 %hook YTWatchLayerViewController
 
 - (id)initWithParentResponder:(id)parentResponder {
     self = %orig;
-    [[%c(ELMNodeFactory) sharedInstance] registerNodeClass:%c(ELMTextNode) forTypeExtension:525000000];
+    [[%c(ELMNodeFactory) sharedInstance] registerNodeClass:%c(ELMTextNode2) forTypeExtension:525000000];
     return self;
+}
+
+%end
+
+%hook YTHotConfig
+
+- (BOOL)isFixAvatarFlickersEnabled { return NO; }
+
+%end
+
+%hook YTColdConfig
+
+- (BOOL)mainAppCoreClientIosTopBarAvatarFix { return NO; }
+- (BOOL)mainAppCoreClientIosTransientVisualGlitchInPivotBarFix { return YES; }
+
+%end
+
+%hook YTPivotBarItemView
+
+- (void)setupIconsAndTitles {
+    %orig;
+    YTIPivotBarItemRenderer *renderer = self.renderer;
+    YTQTMButton *navigationButton = self.navigationButton;
+    NSString *imageURL = [renderer.thumbnail.thumbnailsArray firstObject].URL;
+    HBLogDebug(@"imageURL: %@", imageURL);
+    if (imageURL == nil) return;
+    NSURL *url = [NSURL URLWithString:imageURL];
+    if (url == nil) return;
+    UIImage *image = [UIImage imageWithData:[NSData dataWithContentsOfURL:url]];
+    if (image == nil) return;
+    image = [image yt_imageScaledToSize:CGSizeMake(24, 24)];
+    [navigationButton setImage:image forState:UIControlStateNormal];
+    [navigationButton setImage:image forState:UIControlStateHighlighted];
+    navigationButton.imageView.layer.cornerRadius = 12;
 }
 
 %end
