@@ -13,7 +13,6 @@
 #import <YouTubeHeader/YTIPivotBarItemRenderer.h>
 #import <YouTubeHeader/YTIPlaylistPanelRenderer.h>
 #import <YouTubeHeader/YTIPlaylistPanelVideoRenderer.h>
-#import <YouTubeHeader/YTPageStyleController.h>
 #import <YouTubeHeader/YTPlaylistPanelProminentThumbnailVideoCellController.h>
 #import <YouTubeHeader/YTPlaylistPanelSectionController.h>
 #import <YouTubeHeader/YTVideoElementCellController.h>
@@ -21,6 +20,7 @@
 #import <YouTubeHeader/YTPivotBarItemView.h>
 
 @interface ELMTextNode2 : ELMTextNode
+- (BOOL)isLikeDislikeNode;
 @end
 
 #define DidApplyDefaultSettingsKey @"YTL_DidApplyDefaultSettings"
@@ -41,12 +41,27 @@
 
 %end
 
-static YTICommand *createRelevantCommandFromElementRenderer(YTIElementRenderer *elementRenderer) {
+static YTICommand *createRelevantCommandFromElementRenderer(YTIElementRenderer *elementRenderer, UIView *view) {
+    NSInteger preferredIndex = NSNotFound;
+    if (view) {
+        UIView *parentView = view;
+        do {
+            parentView = parentView.superview;
+        } while (parentView && ![parentView.accessibilityIdentifier isEqualToString:@"eml.vwc"]);
+        if ([parentView.accessibilityIdentifier isEqualToString:@"eml.vwc"])
+            preferredIndex = [parentView.superview.subviews indexOfObject:parentView];
+    }
     YTICommand *command = nil;
     NSString *description = [elementRenderer description];
-    NSRange range = [description rangeOfString:@"/vi/"];
+    NSString *searchString = @"https://www.youtube.com/watch?v=";
+    NSRange range = [description rangeOfString:searchString];
+    if (preferredIndex != NSNotFound) {
+        while (preferredIndex-- > 0) {
+            range = [description rangeOfString:searchString options:0 range:NSMakeRange(range.location + searchString.length, description.length - (range.location + searchString.length))];
+        }
+    }
     if (range.location != NSNotFound) {
-        NSString *videoID = [description substringWithRange:NSMakeRange(range.location + 4, 11)];
+        NSString *videoID = [description substringWithRange:NSMakeRange(range.location + searchString.length, 11)];
         NSString *playlistID = nil;
         HBLogDebug(@"videoID: %@", videoID);
         NSRange listRange = [description rangeOfString:@"&list="];
@@ -109,7 +124,7 @@ static YTIMenuItemSupportedRenderers *createMenuRenderer(YTICommand *command, NS
     HBLogDebug(@"firstResponder: %@", firstResponder);
     YTICommand *command = nil;
     if ([entry isKindOfClass:%c(YTIElementRenderer)])
-        command = createRelevantCommandFromElementRenderer(entry);
+        command = createRelevantCommandFromElementRenderer(entry, view);
     else if ([entry isKindOfClass:%c(YTIPlaylistPanelVideoRenderer)])
         command = createRelevantCommandFromPlaylistPanelVideoRenderer(entry, firstResponder);
     else if ([entry isKindOfClass:%c(YTIInlinePlaybackRenderer)])
@@ -138,7 +153,7 @@ static YTIMenuItemSupportedRenderers *createMenuRenderer(YTICommand *command, NS
     if ([parentNode isKindOfClass:%c(YTVideoWithContextNode)]) {
         YTVideoElementCellController *cellController = (YTVideoElementCellController *)parentNode.parentResponder;
         YTIElementRenderer *renderer = [cellController elementEntry];
-        YTICommand *command = createRelevantCommandFromElementRenderer(renderer);
+        YTICommand *command = createRelevantCommandFromElementRenderer(renderer, nil);
         if (command) {
             UIView *view = nodeController.node.view;
             YTCommandResponderEvent *event = [%c(YTCommandResponderEvent) eventWithCommand:command fromView:view entry:renderer sendClick:NO firstResponder:cellController];
@@ -153,19 +168,17 @@ static YTIMenuItemSupportedRenderers *createMenuRenderer(YTICommand *command, NS
 
 %subclass ELMTextNode2 : ELMTextNode
 
-- (void)setElement:(id)element {
-    %orig;
-    HBLogDebug(@"setElement: %@", element);
-    YTCommonColorPalette *colorPalette = [%c(YTPageStyleController) currentColorPalette];
-    UIColor *textColor = [colorPalette textPrimary];
-    NSMutableAttributedString *attributedString = [[NSMutableAttributedString alloc] initWithAttributedString:self.attributedText];
-    attributedString.mutableString.string = @"⌛";
-    [attributedString addAttribute:NSForegroundColorAttributeName value:textColor range:NSMakeRange(0, attributedString.length)];
-    self.attributedText = attributedString.copy;
+%new(B@:)
+- (BOOL)isLikeDislikeNode {
+    NSString *identifier = self.yogaParent.accessibilityIdentifier;
+    return [identifier isEqualToString:@"id.video.like.button"] || [identifier isEqualToString:@"id.video.dislike.button"];
 }
 
 - (void)controllerDidApplyProperties {
-    HBLogDebug(@"controllerDidApplyProperties");
+    if ([self isLikeDislikeNode])
+        HBLogDebug(@"controllerDidApplyProperties");
+    else
+        %orig;
 }
 
 %end
@@ -195,9 +208,8 @@ static YTIMenuItemSupportedRenderers *createMenuRenderer(YTICommand *command, NS
 
 %hook YTPivotBarItemView
 
-- (void)setupIconsAndTitles {
+- (void)setRenderer:(YTIPivotBarItemRenderer *)renderer {
     %orig;
-    YTIPivotBarItemRenderer *renderer = self.renderer;
     YTQTMButton *navigationButton = self.navigationButton;
     NSString *imageURL = [renderer.thumbnail.thumbnailsArray firstObject].URL;
     HBLogDebug(@"imageURL: %@", imageURL);
@@ -210,6 +222,7 @@ static YTIMenuItemSupportedRenderers *createMenuRenderer(YTICommand *command, NS
     [navigationButton setImage:image forState:UIControlStateNormal];
     [navigationButton setImage:image forState:UIControlStateHighlighted];
     navigationButton.imageView.layer.cornerRadius = 12;
+    [self setNeedsLayout];
 }
 
 %end
