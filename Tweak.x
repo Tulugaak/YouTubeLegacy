@@ -41,6 +41,18 @@
 
 %end
 
+%hook YTInterstitialPromoEventGroupHandler
+
+- (void)addEventHandlers {}
+
+%end
+
+%hook YTPromosheetEventGroupHandler
+
+- (void)addEventHandlers {}
+
+%end
+
 static YTICommand *createRelevantCommandFromElementRenderer(YTIElementRenderer *elementRenderer, UIView *view) {
     NSInteger preferredIndex = NSNotFound;
     if (view) {
