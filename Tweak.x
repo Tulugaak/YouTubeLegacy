@@ -7,17 +7,19 @@
 #import <YouTubeHeader/SRLRegistry.h>
 #import <YouTubeHeader/UIImage+YouTube.h>
 #import <YouTubeHeader/YTCommandResponderEvent.h>
+#import <YouTubeHeader/YTICompactLinkRenderer.h>
 #import <YouTubeHeader/YTIElementRenderer.h>
 #import <YouTubeHeader/YTIInlinePlaybackRenderer.h>
 #import <YouTubeHeader/YTIMenuItemSupportedRenderers.h>
 #import <YouTubeHeader/YTIPivotBarItemRenderer.h>
 #import <YouTubeHeader/YTIPlaylistPanelRenderer.h>
 #import <YouTubeHeader/YTIPlaylistPanelVideoRenderer.h>
+#import <YouTubeHeader/YTPivotBarItemView.h>
 #import <YouTubeHeader/YTPlaylistPanelProminentThumbnailVideoCellController.h>
 #import <YouTubeHeader/YTPlaylistPanelSectionController.h>
+#import <YouTubeHeader/YTRendererForOfflineVideo.h>
 #import <YouTubeHeader/YTVideoElementCellController.h>
 #import <YouTubeHeader/YTVideoWithContextNode.h>
-#import <YouTubeHeader/YTPivotBarItemView.h>
 
 @interface ELMTextNode2 : ELMTextNode
 - (BOOL)isLikeDislikeNode;
@@ -53,27 +55,47 @@
 
 %end
 
+static BOOL isContainerView(UIView *view) {
+    return [view.accessibilityIdentifier isEqualToString:@"eml.vwc"] || [view.accessibilityIdentifier isEqualToString:@"horizontal-video-shelf.view"];
+}
+
+static BOOL isViewNestedInsideView(UIView *view, UIView *parentView) {
+    UIView *currentView = view;
+    while (currentView) {
+        if (currentView == parentView)
+            return YES;
+        currentView = currentView.superview;
+    }
+    return NO;
+}
+
 static YTICommand *createRelevantCommandFromElementRenderer(YTIElementRenderer *elementRenderer, UIView *view) {
     NSInteger preferredIndex = NSNotFound;
     if (view) {
         UIView *parentView = view;
         do {
             parentView = parentView.superview;
-        } while (parentView && ![parentView.accessibilityIdentifier isEqualToString:@"eml.vwc"]);
-        if ([parentView.accessibilityIdentifier isEqualToString:@"eml.vwc"])
-            preferredIndex = [parentView.superview.subviews indexOfObject:parentView];
+        } while (parentView && !isContainerView(parentView));
+        if (isContainerView(parentView)) {
+            if ([parentView.accessibilityIdentifier isEqualToString:@"horizontal-video-shelf.view"]) {
+                preferredIndex = [parentView.subviews[1].subviews indexOfObjectPassingTest:^BOOL(UIView *obj, NSUInteger idx, BOOL *stop) {
+                    return isViewNestedInsideView(view, obj);
+                }];
+            } else
+                preferredIndex = [parentView.superview.subviews indexOfObject:parentView];
+        }
     }
     YTICommand *command = nil;
     NSString *description = [elementRenderer description];
-    NSString *searchString = @"https://www.youtube.com/watch?v=";
-    NSRange range = [description rangeOfString:searchString];
+    NSString *videoSearchString = @"//www.youtube.com/watch?v=";
+    NSRange range = [description rangeOfString:videoSearchString];
     if (preferredIndex != NSNotFound) {
         while (preferredIndex-- > 0) {
-            range = [description rangeOfString:searchString options:0 range:NSMakeRange(range.location + searchString.length, description.length - (range.location + searchString.length))];
+            range = [description rangeOfString:videoSearchString options:0 range:NSMakeRange(range.location + videoSearchString.length, description.length - (range.location + videoSearchString.length))];
         }
     }
     if (range.location != NSNotFound) {
-        NSString *videoID = [description substringWithRange:NSMakeRange(range.location + searchString.length, 11)];
+        NSString *videoID = [description substringWithRange:NSMakeRange(range.location + videoSearchString.length, 11)];
         NSString *playlistID = nil;
         HBLogDebug(@"videoID: %@", videoID);
         NSRange listRange = [description rangeOfString:@"&list="];
@@ -86,6 +108,19 @@ static YTICommand *createRelevantCommandFromElementRenderer(YTIElementRenderer *
             }
         } else
             command = [%c(YTICommand) watchNavigationEndpointWithVideoID:videoID];
+    } else {
+        NSString *playlistSearchString = @"//www.youtube.com/playlist?list=";
+        NSRange playlistRange = [description rangeOfString:playlistSearchString];
+        if (playlistRange.location != NSNotFound) {
+            NSRange idRange = [description rangeOfString:@"\\" options:0 range:NSMakeRange(playlistRange.location + playlistSearchString.length, description.length - (playlistRange.location + playlistSearchString.length))];
+            if (idRange.location != NSNotFound) {
+                NSString *playlistID = [description substringWithRange:NSMakeRange(playlistRange.location + playlistSearchString.length, idRange.location - (playlistRange.location + playlistSearchString.length))];
+                if ([playlistID hasSuffix:@"Z"])
+                    playlistID = [playlistID substringToIndex:playlistID.length - 1];
+                HBLogDebug(@"playlistID: %@", playlistID);
+                command = [%c(YTICommand) watchNavigationEndpointWithPlaylistID:playlistID videoID:nil index:0 watchNextToken:nil];
+            }
+        }
     }
     return command;
 }
@@ -97,11 +132,7 @@ static YTICommand *createRelevantCommandFromPlaylistPanelVideoRenderer(YTIPlayli
     YTPlaylistPanelSectionController *sectionController = cellController.parentResponder;
     YTIPlaylistPanelRenderer *panelRenderer = (YTIPlaylistPanelRenderer *)[sectionController renderer];
     NSUInteger index = [panelRenderer.contentsArray indexOfObjectPassingTest:^BOOL(YTIPlaylistPanelRenderer_PlaylistPanelVideoSupportedRenderers *obj, NSUInteger idx, BOOL *stop) {
-        if (obj.playlistPanelVideoRenderer == playlistPanelVideoRenderer) {
-            *stop = YES;
-            return YES;
-        }
-        return NO;
+        return obj.playlistPanelVideoRenderer == playlistPanelVideoRenderer;
     }];
     NSString *playlistID = panelRenderer.playlistId;
     HBLogDebug(@"playlistID: %@", playlistID);
@@ -110,6 +141,12 @@ static YTICommand *createRelevantCommandFromPlaylistPanelVideoRenderer(YTIPlayli
 
 static YTICommand *createRelevantCommandFromInlinePlaybackRenderer(YTIInlinePlaybackRenderer *inlinePlaybackRenderer) {
     NSString *videoID = inlinePlaybackRenderer.videoId;
+    HBLogDebug(@"videoID: %@", videoID);
+    return [%c(YTICommand) watchNavigationEndpointWithVideoID:videoID];
+}
+
+static YTICommand *createRelevantCommandFromOfflineVideoRenderer(id <YTRendererForOfflineVideo> renderer) {
+    NSString *videoID = renderer.videoId;
     HBLogDebug(@"videoID: %@", videoID);
     return [%c(YTICommand) watchNavigationEndpointWithVideoID:videoID];
 }
@@ -141,6 +178,8 @@ static YTIMenuItemSupportedRenderers *createMenuRenderer(YTICommand *command, NS
         command = createRelevantCommandFromPlaylistPanelVideoRenderer(entry, firstResponder);
     else if ([entry isKindOfClass:%c(YTIInlinePlaybackRenderer)])
         command = createRelevantCommandFromInlinePlaybackRenderer(entry);
+    else if ([entry conformsToProtocol:@protocol(YTRendererForOfflineVideo)])
+        command = createRelevantCommandFromOfflineVideoRenderer(entry);
     if (command) {
         NSString *playText = _LOC([NSBundle mainBundle], @"mdx.actionview.play");
         YTIMenuItemSupportedRenderers *menuItemRenderers = createMenuRenderer(command, playText, @"PlayVideo", YT_PLAY_ALL);
@@ -235,6 +274,16 @@ static YTIMenuItemSupportedRenderers *createMenuRenderer(YTICommand *command, NS
     [navigationButton setImage:image forState:UIControlStateHighlighted];
     navigationButton.imageView.layer.cornerRadius = 12;
     [self setNeedsLayout];
+}
+
+%end
+
+%hook YTICompactLinkRenderer
+
+- (UIImage *)iconImageFromIcon:(YTIIcon *)icon pageStyle:(NSInteger)pageStyle {
+    if ([[[icon.unknownFields getField:1].varintList yt_numberAtIndex:0] intValue] == YT_CLAPPERBOARD)
+        icon.iconType = YT_MOVIES;
+    return %orig;
 }
 
 %end
