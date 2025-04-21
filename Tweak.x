@@ -14,6 +14,7 @@
 #import <YouTubeHeader/YTIPivotBarItemRenderer.h>
 #import <YouTubeHeader/YTIPlaylistPanelRenderer.h>
 #import <YouTubeHeader/YTIPlaylistPanelVideoRenderer.h>
+#import <YouTubeHeader/YTIReelPlayerOverlayRenderer.h>
 #import <YouTubeHeader/YTPivotBarItemView.h>
 #import <YouTubeHeader/YTPlaylistPanelProminentThumbnailVideoCellController.h>
 #import <YouTubeHeader/YTPlaylistPanelSectionController.h>
@@ -55,7 +56,7 @@
 
 %end
 
-static BOOL isContainerView(UIView *view) {
+static BOOL isRelevantContainerView(UIView *view) {
     return [view.accessibilityIdentifier isEqualToString:@"eml.vwc"] || [view.accessibilityIdentifier isEqualToString:@"horizontal-video-shelf.view"];
 }
 
@@ -75,8 +76,8 @@ static YTICommand *createRelevantCommandFromElementRenderer(YTIElementRenderer *
         UIView *parentView = view;
         do {
             parentView = parentView.superview;
-        } while (parentView && !isContainerView(parentView));
-        if (isContainerView(parentView)) {
+        } while (parentView && !isRelevantContainerView(parentView));
+        if (isRelevantContainerView(parentView)) {
             if ([parentView.accessibilityIdentifier isEqualToString:@"horizontal-video-shelf.view"]) {
                 preferredIndex = [parentView.subviews[1].subviews indexOfObjectPassingTest:^BOOL(UIView *obj, NSUInteger idx, BOOL *stop) {
                     return isViewNestedInsideView(view, obj);
@@ -278,12 +279,37 @@ static YTIMenuItemSupportedRenderers *createMenuRenderer(YTICommand *command, NS
 
 %end
 
-%hook YTICompactLinkRenderer
+%hook YTIIcon
 
-- (UIImage *)iconImageFromIcon:(YTIIcon *)icon pageStyle:(NSInteger)pageStyle {
-    if ([[[icon.unknownFields getField:1].varintList yt_numberAtIndex:0] intValue] == YT_CLAPPERBOARD)
-        icon.iconType = YT_MOVIES;
+- (UIImage *)iconImageWithColor:(UIColor *)color {
+    int unknownIconType = [[[self.unknownFields getField:1].varintList yt_numberAtIndex:0] intValue];
+    if (unknownIconType == YT_CLAPPERBOARD)
+        self.iconType = YT_MOVIES;
     return %orig;
+}
+
+%end
+
+%hook YTReelWatchPlaybackOverlayView
+
+- (void)setActionBarElementRenderer:(id)renderer {}
+
+%end
+
+%hook YTReelContentView
+
+- (void)setOverlayRenderer:(YTIReelPlayerOverlayRenderer *)renderer {
+    renderer.likeButton = renderer.doubleTapLikeButton;
+    %orig;
+}
+
+%end
+
+%group PlaylistPageRefresh
+
+BOOL (*YTPlaylistPageRefreshSupported)(void) = NULL;
+%hookf(BOOL, YTPlaylistPageRefreshSupported) {
+    return YES;
 }
 
 %end
@@ -300,6 +326,13 @@ static YTIMenuItemSupportedRenderers *createMenuRenderer(YTICommand *command, NS
         [defaults setBool:YES forKey:DidApplyDefaultSettings2Key];
         [defaults setBool:YES forKey:RYDUseItsDataKey];
         [defaults synchronize];
+    }
+    NSString *bundlePath = [NSString stringWithFormat:@"%@/Frameworks/Module_Framework.framework", NSBundle.mainBundle.bundlePath];
+    [[NSBundle bundleWithPath:bundlePath] load];
+    MSImageRef ref = MSGetImageByName([[bundlePath stringByAppendingString:@"/Module_Framework"] UTF8String]);
+    YTPlaylistPageRefreshSupported = MSFindSymbol(ref, "_YTPlaylistPageRefreshSupported");
+    if (YTPlaylistPageRefreshSupported) {
+        %init(PlaylistPageRefresh);
     }
     %init;
 }
