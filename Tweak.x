@@ -201,9 +201,16 @@ static YTIMenuItemSupportedRenderers *createMenuRenderer(YTICommand *command, NS
 
 - (void)handleTap {
     ELMNodeController *nodeController = [self valueForKey:@"_controller"];
-    YTVideoWithContextNode *parentNode = (YTVideoWithContextNode *)((ELMNodeController *)(nodeController.parent)).node;
+    id parentNode = nil;
+    ELMNodeController *currentController = nodeController.parent;
+    do {
+        parentNode = currentController.node;
+        if ([parentNode isKindOfClass:%c(YTVideoWithContextNode)])
+            break;
+        currentController = currentController.parent;
+    } while (currentController);
     if ([parentNode isKindOfClass:%c(YTVideoWithContextNode)]) {
-        YTVideoElementCellController *cellController = (YTVideoElementCellController *)parentNode.parentResponder;
+        YTVideoElementCellController *cellController = (YTVideoElementCellController *)((YTVideoWithContextNode *)parentNode).parentResponder;
         YTIElementRenderer *renderer = [cellController elementEntry];
         YTICommand *command = createRelevantCommandFromElementRenderer(renderer, nil);
         if (command) {
@@ -263,7 +270,16 @@ static YTIMenuItemSupportedRenderers *createMenuRenderer(YTICommand *command, NS
 - (void)setRenderer:(YTIPivotBarItemRenderer *)renderer {
     %orig;
     YTQTMButton *navigationButton = self.navigationButton;
-    NSString *imageURL = [renderer.thumbnail.thumbnailsArray firstObject].URL;
+    NSString *imageURL;
+    @try {
+        imageURL = [renderer.thumbnail.thumbnailsArray firstObject].URL;
+    } @catch (id ex) {
+        GPBMessage *message = [[renderer messageForFieldNumber:15] messageForFieldNumber:1];
+        GPBUnknownFieldSet *unknownFields = [message unknownFields];
+        GPBUnknownField *field = [unknownFields getField:1];
+        NSData *data = [field.lengthDelimitedList firstObject];
+        imageURL = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+    }
     HBLogDebug(@"imageURL: %@", imageURL);
     if (imageURL == nil) return;
     NSURL *url = [NSURL URLWithString:imageURL];
