@@ -70,7 +70,7 @@ static BOOL isViewNestedInsideView(UIView *view, UIView *parentView) {
     return NO;
 }
 
-static YTICommand *createRelevantCommandFromElementRenderer(YTIElementRenderer *elementRenderer, UIView *view) {
+static YTICommand *createRelevantCommandFromElementRenderer(YTIElementRenderer *elementRenderer, UIView *view, id firstResponder) {
     NSInteger preferredIndex = NSNotFound;
     if (view) {
         UIView *parentView = view;
@@ -121,6 +121,15 @@ static YTICommand *createRelevantCommandFromElementRenderer(YTIElementRenderer *
                 HBLogDebug(@"playlistID: %@", playlistID);
                 command = [%c(YTICommand) watchNavigationEndpointWithPlaylistID:playlistID videoID:nil index:0 watchNextToken:nil];
             }
+        }
+    }
+    if (command == nil && [firstResponder isKindOfClass:%c(YTVideoElementCellController)]) {
+        videoSearchString = @"/vi/";
+        range = [description rangeOfString:videoSearchString];
+        if (range.location != NSNotFound) {
+            NSString *videoID = [description substringWithRange:NSMakeRange(range.location + videoSearchString.length, 11)];
+            HBLogDebug(@"videoID: %@", videoID);
+            command = [%c(YTICommand) watchNavigationEndpointWithVideoID:videoID];
         }
     }
     return command;
@@ -174,7 +183,7 @@ static YTIMenuItemSupportedRenderers *createMenuRenderer(YTICommand *command, NS
     HBLogDebug(@"firstResponder: %@", firstResponder);
     YTICommand *command = nil;
     if ([entry isKindOfClass:%c(YTIElementRenderer)])
-        command = createRelevantCommandFromElementRenderer(entry, view);
+        command = createRelevantCommandFromElementRenderer(entry, view, firstResponder);
     else if ([entry isKindOfClass:%c(YTIPlaylistPanelVideoRenderer)])
         command = createRelevantCommandFromPlaylistPanelVideoRenderer(entry, firstResponder);
     else if ([entry isKindOfClass:%c(YTIInlinePlaybackRenderer)])
@@ -201,6 +210,11 @@ static YTIMenuItemSupportedRenderers *createMenuRenderer(YTICommand *command, NS
 
 - (void)handleTap {
     ELMNodeController *nodeController = [self valueForKey:@"_controller"];
+    HBLogDebug(@"nodeController: %@", nodeController);
+    if ([nodeController isKindOfClass:%c(ELMNodeController)] && [nodeController.node.accessibilityIdentifier isEqualToString:@"eml.overflow_button"]) {
+        %orig;
+        return;
+    }
     id parentNode = nil;
     ELMNodeController *currentController = nodeController.parent;
     do {
@@ -212,7 +226,7 @@ static YTIMenuItemSupportedRenderers *createMenuRenderer(YTICommand *command, NS
     if ([parentNode isKindOfClass:%c(YTVideoWithContextNode)]) {
         YTVideoElementCellController *cellController = (YTVideoElementCellController *)((YTVideoWithContextNode *)parentNode).parentResponder;
         YTIElementRenderer *renderer = [cellController elementEntry];
-        YTICommand *command = createRelevantCommandFromElementRenderer(renderer, nil);
+        YTICommand *command = createRelevantCommandFromElementRenderer(renderer, nil, cellController);
         if (command) {
             UIView *view = nodeController.node.view;
             YTCommandResponderEvent *event = [%c(YTCommandResponderEvent) eventWithCommand:command fromView:view entry:renderer sendClick:NO firstResponder:cellController];
