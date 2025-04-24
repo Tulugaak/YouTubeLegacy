@@ -1,4 +1,5 @@
 #import <HBLog.h>
+#import <YouTubeHeader/_ASDisplayView.h>
 #import <YouTubeHeader/ASCollectionView.h>
 #import <YouTubeHeader/ELMNodeController.h>
 #import <YouTubeHeader/ELMNodeFactory.h>
@@ -60,17 +61,7 @@ static BOOL isRelevantContainerView(UIView *view) {
     return [view.accessibilityIdentifier isEqualToString:@"eml.vwc"] || [view.accessibilityIdentifier isEqualToString:@"horizontal-video-shelf.view"];
 }
 
-static BOOL isViewNestedInsideView(UIView *view, UIView *parentView) {
-    UIView *currentView = view;
-    while (currentView) {
-        if (currentView == parentView)
-            return YES;
-        currentView = currentView.superview;
-    }
-    return NO;
-}
-
-static YTICommand *createRelevantCommandFromElementRenderer(YTIElementRenderer *elementRenderer, UIView *view, id firstResponder) {
+static YTICommand *createRelevantCommandFromElementRenderer(YTIElementRenderer *elementRenderer, _ASDisplayView *view, id firstResponder) {
     NSInteger preferredIndex = NSNotFound;
     if (view) {
         UIView *parentView = view;
@@ -79,8 +70,14 @@ static YTICommand *createRelevantCommandFromElementRenderer(YTIElementRenderer *
         } while (parentView && !isRelevantContainerView(parentView));
         if (isRelevantContainerView(parentView)) {
             if ([parentView.accessibilityIdentifier isEqualToString:@"horizontal-video-shelf.view"]) {
-                preferredIndex = [parentView.subviews[1].subviews indexOfObjectPassingTest:^BOOL(UIView *obj, NSUInteger idx, BOOL *stop) {
-                    return isViewNestedInsideView(view, obj);
+                ELMNodeController *nodeController = [view.keepalive_node controller];
+                do {
+                    nodeController = nodeController.parent;
+                } while (nodeController && ![[nodeController key] isEqualToString:@"video-card-cell"]);
+                ELMNodeController *containerNodeController = ((ELMNodeController *)nodeController.parent).parent;
+                preferredIndex = [[containerNodeController children] indexOfObjectPassingTest:^BOOL(ELMComponent *obj, NSUInteger idx, BOOL *stop) {
+                    ELMNodeController *childNodeController = [obj materializedInstance];
+                    return [[[childNodeController children] firstObject] materializedInstance] == nodeController;
                 }];
             } else
                 preferredIndex = [parentView.superview.subviews indexOfObject:parentView];
@@ -183,7 +180,7 @@ static YTIMenuItemSupportedRenderers *createMenuRenderer(YTICommand *command, NS
     HBLogDebug(@"firstResponder: %@", firstResponder);
     YTICommand *command = nil;
     if ([entry isKindOfClass:%c(YTIElementRenderer)])
-        command = createRelevantCommandFromElementRenderer(entry, view, firstResponder);
+        command = createRelevantCommandFromElementRenderer(entry, (_ASDisplayView *)view, firstResponder);
     else if ([entry isKindOfClass:%c(YTIPlaylistPanelVideoRenderer)])
         command = createRelevantCommandFromPlaylistPanelVideoRenderer(entry, firstResponder);
     else if ([entry isKindOfClass:%c(YTIInlinePlaybackRenderer)])
