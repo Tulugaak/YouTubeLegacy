@@ -204,6 +204,12 @@ static YTIMenuItemSupportedRenderers *createMenuRenderer(YTICommand *command, NS
 
 %end
 
+static ELMNodeController *getNodeControllerParent(ELMNodeController *nodeController) {
+    if ([nodeController respondsToSelector:@selector(parent)])
+        return nodeController.parent;
+    return [nodeController.node.yogaParent controller];
+}
+
 %hook ELMTouchCommandPropertiesHandler
 
 - (void)handleTap {
@@ -214,12 +220,12 @@ static YTIMenuItemSupportedRenderers *createMenuRenderer(YTICommand *command, NS
         return;
     }
     id parentNode = nil;
-    ELMNodeController *currentController = nodeController.parent;
+    ELMNodeController *currentController = getNodeControllerParent(nodeController);
     do {
         parentNode = currentController.node;
         if ([parentNode isKindOfClass:%c(YTVideoWithContextNode)])
             break;
-        currentController = currentController.parent;
+        currentController = getNodeControllerParent(currentController);
     } while (currentController);
     if ([parentNode isKindOfClass:%c(YTVideoWithContextNode)]) {
         YTVideoElementCellController *cellController = (YTVideoElementCellController *)((YTVideoWithContextNode *)parentNode).parentResponder;
@@ -359,6 +365,14 @@ static void setYouTabIcon(YTPivotBarItemView *self, YTIPivotBarItemRenderer *ren
 BOOL (*YTPlaylistPageRefreshSupported)(void) = NULL;
 %hookf(BOOL, YTPlaylistPageRefreshSupported) {
     return YES;
+}
+
+%end
+
+%hook YTHotConfig
+
+- (unsigned int)playPauseButtonTargetDimensionDP {
+    return 56;
 }
 
 %end
