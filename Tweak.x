@@ -20,6 +20,7 @@
 #import <YouTubeHeader/YTPlaylistPanelProminentThumbnailVideoCellController.h>
 #import <YouTubeHeader/YTPlaylistPanelSectionController.h>
 #import <YouTubeHeader/YTRendererForOfflineVideo.h>
+#import <YouTubeHeader/YTUIResources.h>
 #import <YouTubeHeader/YTVideoElementCellController.h>
 #import <YouTubeHeader/YTVideoWithContextNode.h>
 
@@ -276,10 +277,17 @@ static YTIMenuItemSupportedRenderers *createMenuRenderer(YTICommand *command, NS
 
 %end
 
-%hook YTPivotBarItemView
+%hook YTAppImageStyle
 
-- (void)setRenderer:(YTIPivotBarItemRenderer *)renderer {
-    %orig;
+- (UIImage *)pivotBarItemIconImageWithIconType:(YTIcon)iconType color:(UIColor *)color useNewIcons:(BOOL)useNewIcons selected:(BOOL)selected {
+    if (iconType == YT_ACCOUNT_CIRCLE)
+        return [%c(YTUIResources) iconAccountCircle];
+    return %orig;
+}
+
+%end
+
+static void setYouTabIcon(YTPivotBarItemView *self, YTIPivotBarItemRenderer *renderer) {
     YTQTMButton *navigationButton = self.navigationButton;
     NSString *imageURL;
     @try {
@@ -302,6 +310,20 @@ static YTIMenuItemSupportedRenderers *createMenuRenderer(YTICommand *command, NS
     [navigationButton setImage:image forState:UIControlStateHighlighted];
     navigationButton.imageView.layer.cornerRadius = 12;
     [self setNeedsLayout];
+}
+
+%hook YTPivotBarItemView
+
+- (void)updateTitleAndIcons {
+    %orig;
+    if (![self.renderer.pivotIdentifier isEqualToString:@"FElibrary"] || [self respondsToSelector:@selector(setupIconsAndTitles)]) return;
+    setYouTabIcon(self, self.renderer);
+}
+
+- (void)setRenderer:(YTIPivotBarItemRenderer *)renderer {
+    %orig;
+    if (![renderer.pivotIdentifier isEqualToString:@"FElibrary"]) return;
+    setYouTabIcon(self, renderer);
 }
 
 %end
@@ -340,6 +362,15 @@ BOOL (*YTPlaylistPageRefreshSupported)(void) = NULL;
 }
 
 %end
+
+// %hook YTELMLogger
+
+// - (void)logErrorEvent:(id)event {
+//     HBLogInfo(@"logErrorEvent: %@", event);
+//     %orig;
+// }
+
+// %end
 
 %ctor {
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
