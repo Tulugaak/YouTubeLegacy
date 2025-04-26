@@ -1,3 +1,4 @@
+#import <dlfcn.h>
 #import <HBLog.h>
 #import <YouTubeHeader/_ASDisplayView.h>
 #import <YouTubeHeader/ASCollectionView.h>
@@ -7,8 +8,10 @@
 #import <YouTubeHeader/ELMTouchCommandPropertiesHandler.h>
 #import <YouTubeHeader/SRLRegistry.h>
 #import <YouTubeHeader/UIImage+YouTube.h>
+#import <YouTubeHeader/YTAutoplayController.h>
 #import <YouTubeHeader/YTCommandResponderEvent.h>
 #import <YouTubeHeader/YTICompactLinkRenderer.h>
+#import <YouTubeHeader/YTICoWatchWatchEndpointWrapperCommand.h>
 #import <YouTubeHeader/YTIElementRenderer.h>
 #import <YouTubeHeader/YTIInlinePlaybackRenderer.h>
 #import <YouTubeHeader/YTIMenuItemSupportedRenderers.h>
@@ -23,6 +26,7 @@
 #import <YouTubeHeader/YTUIResources.h>
 #import <YouTubeHeader/YTVideoElementCellController.h>
 #import <YouTubeHeader/YTVideoWithContextNode.h>
+#import <YouTubeHeader/YTWatchTransition.h>
 
 @interface ELMTextNode2 : ELMTextNode
 - (BOOL)isLikeDislikeNode;
@@ -36,6 +40,8 @@
 
 #define _LOC(b, x) [b localizedStringForKey:x value:nil table:nil]
 
+#pragma mark - Fix app crash on launch
+
 %hook SRLRegistry
 
 - (id)internalService:(struct _SRLAPIRegistrationData *)service scopeTags:(struct SRLScopeTagSet)tags {
@@ -45,6 +51,8 @@
 }
 
 %end
+
+#pragma mark - Remove app upgrade popup
 
 %hook YTInterstitialPromoEventGroupHandler
 
@@ -57,6 +65,8 @@
 - (void)addEventHandlers {}
 
 %end
+
+#pragma mark - Add play option menu to videos
 
 static BOOL isRelevantContainerView(UIView *view) {
     return [view.accessibilityIdentifier isEqualToString:@"eml.vwc"] || [view.accessibilityIdentifier isEqualToString:@"horizontal-video-shelf.view"];
@@ -204,6 +214,8 @@ static YTIMenuItemSupportedRenderers *createMenuRenderer(YTICommand *command, NS
 
 %end
 
+#pragma mark - Make tapping on a video card playing the video
+
 static ELMNodeController *getNodeControllerParent(ELMNodeController *nodeController) {
     if ([nodeController respondsToSelector:@selector(parent)])
         return nodeController.parent;
@@ -243,6 +255,8 @@ static ELMNodeController *getNodeControllerParent(ELMNodeController *nodeControl
 
 %end
 
+#pragma mark - Fix video like/dislike buttons not displaying numbers
+
 %subclass ELMTextNode2 : ELMTextNode
 
 %new(B@:)
@@ -269,6 +283,8 @@ static ELMNodeController *getNodeControllerParent(ELMNodeController *nodeControl
 }
 
 %end
+
+#pragma mark - Fix You tab avatar not displaying
 
 %hook YTHotConfig
 
@@ -334,6 +350,8 @@ static void setYouTabIcon(YTPivotBarItemView *self, YTIPivotBarItemRenderer *ren
 
 %end
 
+#pragma mark - Fix movie icon in You page not displaying
+
 %hook YTIIcon
 
 - (UIImage *)iconImageWithColor:(UIColor *)color {
@@ -344,6 +362,8 @@ static void setYouTabIcon(YTPivotBarItemView *self, YTIPivotBarItemRenderer *ren
 }
 
 %end
+
+#pragma mark - Fix Shorts like/dislike buttons not displaying
 
 %hook YTReelWatchPlaybackOverlayView
 
@@ -360,6 +380,8 @@ static void setYouTabIcon(YTPivotBarItemView *self, YTIPivotBarItemRenderer *ren
 
 %end
 
+#pragma mark - Fix "Play all" button in playlist not displaying
+
 %group PlaylistPageRefresh
 
 BOOL (*YTPlaylistPageRefreshSupported)(void) = NULL;
@@ -369,10 +391,56 @@ BOOL (*YTPlaylistPageRefreshSupported)(void) = NULL;
 
 %end
 
+#pragma mark - Fix video play/pause button not working
+
 %hook YTHotConfig
 
 - (unsigned int)playPauseButtonTargetDimensionDP {
     return 56;
+}
+
+%end
+
+#pragma mark - Fix video next/previous buttons not working, autoplay not working
+
+%hook YTAutoplayController
+
+- (id)navEndpointHavingWatchEndpointOrNil:(YTICommand *)endpoint {
+    return [endpoint hasActiveOnlineOrOfflineWatchEndpoint]
+        || [endpoint hasExtension:[%c(YTICoWatchWatchEndpointWrapperCommand) coWatchWatchEndpointWrapperCommand]]
+        ? endpoint : nil;
+}
+
+// - (YTWatchTransition *)newAutoplayWatchTransition {
+//     YTICommand *autoplayEndpoint = [self autoplayEndpoint];
+//     if (autoplayEndpoint == nil) return nil;
+//     GPBExtensionDescriptor *coWatchCommand = [%c(YTICoWatchWatchEndpointWrapperCommand) coWatchWatchEndpointWrapperCommand];
+//     if (![autoplayEndpoint hasActiveOnlineOrOfflineWatchEndpoint] && ![autoplayEndpoint hasExtension:coWatchCommand])
+//         return [[%c(YTWatchTransition) alloc] initWithNavEndpoint:autoplayEndpoint watchEndpointSource:1 forcePlayerReload:YES];
+//     YTICommand *watchEndpoint = ((YTICoWatchWatchEndpointWrapperCommand *)[autoplayEndpoint getExtension:coWatchCommand]).watchEndpoint;
+//     return [[%c(YTWatchTransition) alloc] initWithNavEndpoint:watchEndpoint watchEndpointSource:1 forcePlayerReload:YES];
+// }
+
+- (void)sendWatchTransitionWithNavEndpoint:(YTICommand *)navEndpoint watchEndpointSource:(int)watchEndpointSource {
+    if (![navEndpoint hasActiveOnlineOrOfflineWatchEndpoint]) {
+        GPBExtensionDescriptor *coWatchCommand = [%c(YTICoWatchWatchEndpointWrapperCommand) coWatchWatchEndpointWrapperCommand];
+        if ([navEndpoint hasExtension:coWatchCommand]) {
+            YTICoWatchWatchEndpointWrapperCommand *extension = [navEndpoint getExtension:coWatchCommand];
+            %orig(extension.watchEndpoint, watchEndpointSource);
+            return;
+        }
+    }
+    %orig;
+}
+
+%end
+
+%hook YTAutonavController
+
+- (id)navEndpointHavingWatchEndpointOrNil:(YTICommand *)endpoint {
+    return [endpoint hasActiveOnlineOrOfflineWatchEndpoint]
+        || [endpoint hasExtension:[%c(YTICoWatchWatchEndpointWrapperCommand) coWatchWatchEndpointWrapperCommand]]
+        ? endpoint : nil;
 }
 
 %end
@@ -400,7 +468,7 @@ BOOL (*YTPlaylistPageRefreshSupported)(void) = NULL;
         [defaults synchronize];
     }
     NSString *bundlePath = [NSString stringWithFormat:@"%@/Frameworks/Module_Framework.framework", NSBundle.mainBundle.bundlePath];
-    [[NSBundle bundleWithPath:bundlePath] load];
+    dlopen([bundlePath UTF8String], RTLD_NOW);
     MSImageRef ref = MSGetImageByName([[bundlePath stringByAppendingString:@"/Module_Framework"] UTF8String]);
     YTPlaylistPageRefreshSupported = MSFindSymbol(ref, "_YTPlaylistPageRefreshSupported");
     if (YTPlaylistPageRefreshSupported) {
