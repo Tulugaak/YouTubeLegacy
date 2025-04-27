@@ -407,14 +407,14 @@ BOOL (*YTPlaylistPageRefreshSupported)(void) = NULL;
 
 - (id)navEndpointHavingWatchEndpointOrNil:(YTICommand *)endpoint {
     return [endpoint hasActiveOnlineOrOfflineWatchEndpoint]
-        || [endpoint hasExtension:[%c(YTICoWatchWatchEndpointWrapperCommand) coWatchWatchEndpointWrapperCommand]]
+        || [endpoint hasExtension:[%c(YTICoWatchWatchEndpointWrapperCommand) descriptor]]
         ? endpoint : nil;
 }
 
 // - (YTWatchTransition *)newAutoplayWatchTransition {
 //     YTICommand *autoplayEndpoint = [self autoplayEndpoint];
 //     if (autoplayEndpoint == nil) return nil;
-//     GPBExtensionDescriptor *coWatchCommand = [%c(YTICoWatchWatchEndpointWrapperCommand) coWatchWatchEndpointWrapperCommand];
+//     GPBExtensionDescriptor *coWatchCommand = [%c(YTICoWatchWatchEndpointWrapperCommand) descriptor];
 //     if (![autoplayEndpoint hasActiveOnlineOrOfflineWatchEndpoint] && ![autoplayEndpoint hasExtension:coWatchCommand])
 //         return [[%c(YTWatchTransition) alloc] initWithNavEndpoint:autoplayEndpoint watchEndpointSource:1 forcePlayerReload:YES];
 //     YTICommand *watchEndpoint = ((YTICoWatchWatchEndpointWrapperCommand *)[autoplayEndpoint getExtension:coWatchCommand]).watchEndpoint;
@@ -423,7 +423,7 @@ BOOL (*YTPlaylistPageRefreshSupported)(void) = NULL;
 
 - (void)sendWatchTransitionWithNavEndpoint:(YTICommand *)navEndpoint watchEndpointSource:(int)watchEndpointSource {
     if (![navEndpoint hasActiveOnlineOrOfflineWatchEndpoint]) {
-        GPBExtensionDescriptor *coWatchCommand = [%c(YTICoWatchWatchEndpointWrapperCommand) coWatchWatchEndpointWrapperCommand];
+        GPBExtensionDescriptor *coWatchCommand = [%c(YTICoWatchWatchEndpointWrapperCommand) descriptor];
         if ([navEndpoint hasExtension:coWatchCommand]) {
             YTICoWatchWatchEndpointWrapperCommand *extension = [navEndpoint getExtension:coWatchCommand];
             %orig(extension.watchEndpoint, watchEndpointSource);
@@ -439,11 +439,13 @@ BOOL (*YTPlaylistPageRefreshSupported)(void) = NULL;
 
 - (id)navEndpointHavingWatchEndpointOrNil:(YTICommand *)endpoint {
     return [endpoint hasActiveOnlineOrOfflineWatchEndpoint]
-        || [endpoint hasExtension:[%c(YTICoWatchWatchEndpointWrapperCommand) coWatchWatchEndpointWrapperCommand]]
+        || [endpoint hasExtension:[%c(YTICoWatchWatchEndpointWrapperCommand) descriptor]]
         ? endpoint : nil;
 }
 
 %end
+
+#pragma mark - Debug ELM
 
 // %hook YTELMLogger
 
