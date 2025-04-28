@@ -173,7 +173,8 @@ static YTIMenuItemSupportedRenderers *createMenuRenderer(YTICommand *command, NS
     YTIIcon *icon = [%c(YTIIcon) new];
     icon.iconType = iconType;
     YTIMenuNavigationItemRenderer *navigationItemRenderer = [%c(YTIMenuNavigationItemRenderer) new];
-    navigationItemRenderer.menuItemIdentifier = identifier;
+    if ([navigationItemRenderer respondsToSelector:@selector(setMenuItemIdentifier:)])
+        navigationItemRenderer.menuItemIdentifier = identifier;
     navigationItemRenderer.navigationEndpoint = command;
     navigationItemRenderer.icon = icon;
     navigationItemRenderer.text = [%c(YTIFormattedString) formattedStringWithString:text];
@@ -203,7 +204,7 @@ static YTIMenuItemSupportedRenderers *createMenuRenderer(YTICommand *command, NS
         YTIMenuItemSupportedRenderers *menuItemRenderers = createMenuRenderer(command, playText, @"PlayVideo", YT_PLAY_ALL);
         [renderers insertObject:menuItemRenderers atIndex:0];
     }
-    if ([firstResponder isKindOfClass:%c(YTHeaderViewController)]) {
+    if ([firstResponder isKindOfClass:%c(YTHeaderViewController)] || [firstResponder isKindOfClass:%c(YTHeaderContentComboViewController)]) {
         NSString *switchAccountText = _LOC([NSBundle mainBundle], @"sign_in_retroactive.select_another_account");
         command = [%c(YTICommand) signInNavigationEndpoint];
         YTIMenuItemSupportedRenderers *menuItemRenderers = createMenuRenderer(command, switchAccountText, @"SwitchAccount", 182);
@@ -441,6 +442,18 @@ BOOL (*YTPlaylistPageRefreshSupported)(void) = NULL;
     return [endpoint hasActiveOnlineOrOfflineWatchEndpoint]
         || [endpoint hasExtension:[%c(YTICoWatchWatchEndpointWrapperCommand) descriptor]]
         ? endpoint : nil;
+}
+
+- (void)sendWatchTransitionWithNavEndpoint:(YTICommand *)navEndpoint watchEndpointSource:(int)watchEndpointSource {
+    if (![navEndpoint hasActiveOnlineOrOfflineWatchEndpoint]) {
+        GPBExtensionDescriptor *coWatchCommand = [%c(YTICoWatchWatchEndpointWrapperCommand) descriptor];
+        if ([navEndpoint hasExtension:coWatchCommand]) {
+            YTICoWatchWatchEndpointWrapperCommand *extension = [navEndpoint getExtension:coWatchCommand];
+            %orig(extension.watchEndpoint, watchEndpointSource);
+            return;
+        }
+    }
+    %orig;
 }
 
 %end
