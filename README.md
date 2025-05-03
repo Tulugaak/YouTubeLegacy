@@ -1,6 +1,6 @@
 # YouTubeLegacy
 
-YouTubeLegacy attempts to make old YouTube versions work again. It works best with YouTube version 17.10.2+.
+YouTubeLegacy attempts to make old YouTube versions work again. It works from YouTube version 16.32.6+.
 
 ## List of mitigations
 

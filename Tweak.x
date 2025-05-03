@@ -256,7 +256,7 @@ static ELMNodeController *getNodeControllerParent(ELMNodeController *nodeControl
 
 %end
 
-#pragma mark - Fix video like/dislike buttons not displaying numbers
+#pragma mark - Fix video like/dislike buttons not displaying numbers (17.10.2+)
 
 %subclass ELMTextNode2 : ELMTextNode
 
@@ -366,12 +366,6 @@ static void setYouTabIcon(YTPivotBarItemView *self, YTIPivotBarItemRenderer *ren
 
 #pragma mark - Fix Shorts like/dislike buttons not displaying
 
-%hook YTReelWatchPlaybackOverlayView
-
-- (void)setActionBarElementRenderer:(id)renderer {}
-
-%end
-
 %hook YTReelContentView
 
 - (void)setOverlayRenderer:(YTIReelPlayerOverlayRenderer *)renderer {
@@ -404,18 +398,25 @@ BOOL (*YTPlaylistPageRefreshSupported)(void) = NULL;
 
 #pragma mark - Fix video next/previous buttons not working, autoplay not working
 
+static GPBExtensionDescriptor *getCoWatchEndpointWrapperCommandDescriptor() {
+    Class coWatchCommandClass = %c(YTICoWatchWatchEndpointWrapperCommand);
+    if ([coWatchCommandClass respondsToSelector:@selector(coWatchWatchEndpointWrapperCommand)])
+        return [coWatchCommandClass coWatchWatchEndpointWrapperCommand];
+    return [coWatchCommandClass descriptor];
+}
+
 %hook YTAutoplayController
 
 - (id)navEndpointHavingWatchEndpointOrNil:(YTICommand *)endpoint {
     return [endpoint hasActiveOnlineOrOfflineWatchEndpoint]
-        || [endpoint hasExtension:[%c(YTICoWatchWatchEndpointWrapperCommand) descriptor]]
+        || [endpoint hasExtension:getCoWatchEndpointWrapperCommandDescriptor()]
         ? endpoint : nil;
 }
 
 // - (YTWatchTransition *)newAutoplayWatchTransition {
 //     YTICommand *autoplayEndpoint = [self autoplayEndpoint];
 //     if (autoplayEndpoint == nil) return nil;
-//     GPBExtensionDescriptor *coWatchCommand = [%c(YTICoWatchWatchEndpointWrapperCommand) descriptor];
+//     GPBExtensionDescriptor *coWatchCommand = getCoWatchEndpointWrapperCommandDescriptor();
 //     if (![autoplayEndpoint hasActiveOnlineOrOfflineWatchEndpoint] && ![autoplayEndpoint hasExtension:coWatchCommand])
 //         return [[%c(YTWatchTransition) alloc] initWithNavEndpoint:autoplayEndpoint watchEndpointSource:1 forcePlayerReload:YES];
 //     YTICommand *watchEndpoint = ((YTICoWatchWatchEndpointWrapperCommand *)[autoplayEndpoint getExtension:coWatchCommand]).watchEndpoint;
@@ -424,7 +425,7 @@ BOOL (*YTPlaylistPageRefreshSupported)(void) = NULL;
 
 - (void)sendWatchTransitionWithNavEndpoint:(YTICommand *)navEndpoint watchEndpointSource:(int)watchEndpointSource {
     if (![navEndpoint hasActiveOnlineOrOfflineWatchEndpoint]) {
-        GPBExtensionDescriptor *coWatchCommand = [%c(YTICoWatchWatchEndpointWrapperCommand) descriptor];
+        GPBExtensionDescriptor *coWatchCommand = getCoWatchEndpointWrapperCommandDescriptor();
         if ([navEndpoint hasExtension:coWatchCommand]) {
             YTICoWatchWatchEndpointWrapperCommand *extension = [navEndpoint getExtension:coWatchCommand];
             %orig(extension.watchEndpoint, watchEndpointSource);
@@ -440,13 +441,13 @@ BOOL (*YTPlaylistPageRefreshSupported)(void) = NULL;
 
 - (id)navEndpointHavingWatchEndpointOrNil:(YTICommand *)endpoint {
     return [endpoint hasActiveOnlineOrOfflineWatchEndpoint]
-        || [endpoint hasExtension:[%c(YTICoWatchWatchEndpointWrapperCommand) descriptor]]
+        || [endpoint hasExtension:getCoWatchEndpointWrapperCommandDescriptor()]
         ? endpoint : nil;
 }
 
 - (void)sendWatchTransitionWithNavEndpoint:(YTICommand *)navEndpoint watchEndpointSource:(int)watchEndpointSource {
     if (![navEndpoint hasActiveOnlineOrOfflineWatchEndpoint]) {
-        GPBExtensionDescriptor *coWatchCommand = [%c(YTICoWatchWatchEndpointWrapperCommand) descriptor];
+        GPBExtensionDescriptor *coWatchCommand = getCoWatchEndpointWrapperCommandDescriptor();
         if ([navEndpoint hasExtension:coWatchCommand]) {
             YTICoWatchWatchEndpointWrapperCommand *extension = [navEndpoint getExtension:coWatchCommand];
             %orig(extension.watchEndpoint, watchEndpointSource);
