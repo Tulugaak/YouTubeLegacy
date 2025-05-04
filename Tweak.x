@@ -368,6 +368,12 @@ static void setYouTabIcon(YTPivotBarItemView *self, YTIPivotBarItemRenderer *ren
 
 #pragma mark - Fix Shorts like/dislike buttons not displaying
 
+%hook YTReelWatchPlaybackOverlayView
+
+- (void)setActionBarElementRenderer:(id)renderer {}
+
+%end
+
 %hook YTReelContentView
 
 - (void)setOverlayRenderer:(YTIReelPlayerOverlayRenderer *)renderer {
