@@ -6,6 +6,7 @@
 #import <YouTubeHeader/ELMNodeFactory.h>
 #import <YouTubeHeader/ELMTextNode.h>
 #import <YouTubeHeader/ELMTouchCommandPropertiesHandler.h>
+#import <YouTubeHeader/MDXScreenDiscoveryManager.h>
 #import <YouTubeHeader/SRLRegistry.h>
 #import <YouTubeHeader/UIImage+YouTube.h>
 #import <YouTubeHeader/YTAutoplayController.h>
@@ -19,6 +20,7 @@
 #import <YouTubeHeader/YTIPlaylistPanelRenderer.h>
 #import <YouTubeHeader/YTIPlaylistPanelVideoRenderer.h>
 #import <YouTubeHeader/YTIReelPlayerOverlayRenderer.h>
+#import <YouTubeHeader/YTNonCriticalStartupTelemetricSmartScheduler.h>
 #import <YouTubeHeader/YTPivotBarItemView.h>
 #import <YouTubeHeader/YTPlaylistPanelProminentThumbnailVideoCellController.h>
 #import <YouTubeHeader/YTPlaylistPanelSectionController.h>
@@ -459,6 +461,49 @@ static GPBExtensionDescriptor *getCoWatchEndpointWrapperCommandDescriptor() {
 
 %end
 
+#pragma mark - Fix left side of video player not responding to double tap to seek gesture
+
+%hook YTColdConfig
+
+- (BOOL)isLandscapeEngagementPanelEnabled { return YES; }
+
+%end
+
+// #pragma mark - Fix app crash on launch where there are TVs in the network?
+
+// %group MDX
+
+// YTNonCriticalStartupTelemetricSmartScheduler *(*InjectOptionalYTNonCriticalStartupScheduler)(void);
+// BOOL disableMDXScreenDiscoveryManagerInit = NO;
+
+// %hook MDXScreenDiscoveryManager
+
+// - (id)init {
+//     return disableMDXScreenDiscoveryManagerInit ? nil : %orig;
+// }
+
+// %end
+
+// %hook MDXRealServices
+
+// - (void)scheduleStartUpActions {
+//     YTNonCriticalStartupTelemetricSmartScheduler *scheduler = InjectOptionalYTNonCriticalStartupScheduler();
+//     [scheduler schedule:19 withBlock:^{
+//         [%c(MDXScreenDiscoveryManager) setSharedInstance:[%c(MDXScreenDiscoveryManager) new]];
+//     }];
+//     %orig;
+// }
+
+// - (void)createSharedSingletons {
+//     disableMDXScreenDiscoveryManagerInit = YES;
+//     %orig;
+//     disableMDXScreenDiscoveryManagerInit = NO;
+// }
+
+// %end
+
+// %end
+
 #pragma mark - Debug ELM
 
 // %hook YTELMLogger
@@ -471,6 +516,13 @@ static GPBExtensionDescriptor *getCoWatchEndpointWrapperCommandDescriptor() {
 // %end
 
 %ctor {
+    NSString *bundlePath = [NSString stringWithFormat:@"%@/Frameworks/Module_Framework.framework", NSBundle.mainBundle.bundlePath];
+    dlopen([bundlePath UTF8String], RTLD_NOW);
+    MSImageRef ref = MSGetImageByName([[bundlePath stringByAppendingString:@"/Module_Framework"] UTF8String]);
+    if (ref == NULL) return;
+    NSBundle *moduleFrameworkBundle = [NSBundle bundleWithPath:bundlePath];
+    NSString *version = [moduleFrameworkBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
+    if ([version compare:@"19.01.1" options:NSNumericSearch] != NSOrderedAscending) return;
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     if (![defaults boolForKey:DidApplyDefaultSettingsKey]) {
         [defaults setBool:YES forKey:DidApplyDefaultSettingsKey];
@@ -483,12 +535,13 @@ static GPBExtensionDescriptor *getCoWatchEndpointWrapperCommandDescriptor() {
         [defaults setBool:YES forKey:RYDUseItsDataKey];
         [defaults synchronize];
     }
-    NSString *bundlePath = [NSString stringWithFormat:@"%@/Frameworks/Module_Framework.framework", NSBundle.mainBundle.bundlePath];
-    dlopen([bundlePath UTF8String], RTLD_NOW);
-    MSImageRef ref = MSGetImageByName([[bundlePath stringByAppendingString:@"/Module_Framework"] UTF8String]);
     YTPlaylistPageRefreshSupported = MSFindSymbol(ref, "_YTPlaylistPageRefreshSupported");
     if (YTPlaylistPageRefreshSupported) {
         %init(PlaylistPageRefresh);
     }
+    // InjectOptionalYTNonCriticalStartupScheduler = MSFindSymbol(ref, "_InjectOptionalYTNonCriticalStartupScheduler");
+    // if (InjectOptionalYTNonCriticalStartupScheduler) {
+    //     %init(MDX);
+    // }
     %init;
 }
