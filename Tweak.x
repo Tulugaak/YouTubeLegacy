@@ -353,14 +353,32 @@ static void setYouTabIcon(YTPivotBarItemView *self, YTIPivotBarItemRenderer *ren
 
 %end
 
-#pragma mark - Fix movie icon in You page not displaying
+#pragma mark - Fix icons not displaying
+
+static YTIcon getIconType(YTIIcon *self) {
+    YTIcon iconType = self.iconType;
+    return iconType ?: [[[self.unknownFields getField:1].varintList yt_numberAtIndex:0] intValue];
+}
 
 %hook YTIIcon
 
 - (UIImage *)iconImageWithColor:(UIColor *)color {
-    int unknownIconType = [[[self.unknownFields getField:1].varintList yt_numberAtIndex:0] intValue];
-    if (unknownIconType == YT_CLAPPERBOARD)
+    YTIcon iconType = getIconType(self);
+    if (iconType == YT_CLAPPERBOARD) // Movie icon in You page
         self.iconType = YT_MOVIES;
+    return %orig;
+}
+
+- (UIImage *)iconImageForContextMenu {
+    switch (getIconType(self)) {
+        case YT_UNSUBSCRIBE: // Context menu: Unsubscribe
+        case YT_X_CIRCLE:
+            return [%c(YTUIResources) xCircleOutline];
+        case YT_BOOKMARK_BORDER: // Context menu: Save to playlist
+            return [self iconImageWithColor:nil];
+        default:
+            break;
+    }
     return %orig;
 }
 
