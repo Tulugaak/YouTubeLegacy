@@ -1,5 +1,6 @@
 #import <dlfcn.h>
 #import <HBLog.h>
+#import <PSHeader/Misc.h>
 #import <YouTubeHeader/_ASDisplayView.h>
 #import <YouTubeHeader/ASCollectionView.h>
 #import <YouTubeHeader/ELMNodeController.h>
@@ -40,6 +41,7 @@
 #define YouSpeedButtonPositionKey @"YTVideoOverlay-YouSpeed-Position"
 #define RYDUseItsDataKey @"RYD-USE-LIKE-DATA"
 
+#define TweakName @"YouTubeLegacy"
 #define _LOC(b, x) [b localizedStringForKey:x value:nil table:nil]
 
 #pragma mark - Fix app crash on launch
@@ -493,40 +495,61 @@ static GPBExtensionDescriptor *getCoWatchEndpointWrapperCommandDescriptor() {
 
 %end
 
-// #pragma mark - Fix app crash on launch where there are TVs in the network?
+#pragma mark - Fix app crash on launch where there are TVs in the network?
 
-// %group MDX
+%group MDX
 
-// YTNonCriticalStartupTelemetricSmartScheduler *(*InjectOptionalYTNonCriticalStartupScheduler)(void);
-// BOOL disableMDXScreenDiscoveryManagerInit = NO;
+YTNonCriticalStartupTelemetricSmartScheduler *(*InjectOptionalYTNonCriticalStartupScheduler)(void);
+BOOL disableMDXScreenDiscoveryManagerInit = NO;
 
-// %hook MDXScreenDiscoveryManager
+%hook MDXScreenDiscoveryManager
 
-// - (id)init {
-//     return disableMDXScreenDiscoveryManagerInit ? nil : %orig;
-// }
+- (id)init {
+    return disableMDXScreenDiscoveryManagerInit ? nil : %orig;
+}
 
-// %end
+%end
 
-// %hook MDXRealServices
+%hook MDXRealServices
 
-// - (void)scheduleStartUpActions {
-//     YTNonCriticalStartupTelemetricSmartScheduler *scheduler = InjectOptionalYTNonCriticalStartupScheduler();
-//     [scheduler schedule:19 withBlock:^{
-//         [%c(MDXScreenDiscoveryManager) setSharedInstance:[%c(MDXScreenDiscoveryManager) new]];
-//     }];
-//     %orig;
-// }
+- (void)scheduleStartUpActions {
+    YTNonCriticalStartupTelemetricSmartScheduler *scheduler = InjectOptionalYTNonCriticalStartupScheduler();
+    [scheduler schedule:19 withBlock:^{
+        [%c(MDXScreenDiscoveryManager) setSharedInstance:[%c(MDXScreenDiscoveryManager) new]];
+    }];
+    %orig;
+}
 
-// - (void)createSharedSingletons {
-//     disableMDXScreenDiscoveryManagerInit = YES;
-//     %orig;
-//     disableMDXScreenDiscoveryManagerInit = NO;
-// }
+- (void)createSharedSingletons {
+    disableMDXScreenDiscoveryManagerInit = YES;
+    %orig;
+    disableMDXScreenDiscoveryManagerInit = NO;
+}
 
-// %end
+%end
 
-// %end
+%end
+
+#pragma mark - Improve general JS element compatibility
+
+NSBundle *TweakBundle() {
+    static NSBundle *bundle = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        NSString *tweakBundlePath = [[NSBundle mainBundle] pathForResource:TweakName ofType:@"bundle"];
+        bundle = [NSBundle bundleWithPath:tweakBundlePath ?: PS_ROOT_PATH_NS(@"/Library/Application Support/" TweakName ".bundle")];
+    });
+    return bundle;
+}
+
+%hook YTDataPushEmbeddedPayloadBundleProviderImpl
+
+- (NSBundle *)embeddedPayloadBundle {
+    NSBundle *bundle = TweakBundle();
+    return bundle ?: %orig;
+}
+
+%end
 
 #pragma mark - Debug ELM
 
@@ -563,9 +586,9 @@ static GPBExtensionDescriptor *getCoWatchEndpointWrapperCommandDescriptor() {
     if (YTPlaylistPageRefreshSupported) {
         %init(PlaylistPageRefresh);
     }
-    // InjectOptionalYTNonCriticalStartupScheduler = MSFindSymbol(ref, "_InjectOptionalYTNonCriticalStartupScheduler");
-    // if (InjectOptionalYTNonCriticalStartupScheduler) {
-    //     %init(MDX);
-    // }
+    InjectOptionalYTNonCriticalStartupScheduler = MSFindSymbol(ref, "_InjectOptionalYTNonCriticalStartupScheduler");
+    if (InjectOptionalYTNonCriticalStartupScheduler) {
+        %init(MDX);
+    }
     %init;
 }
