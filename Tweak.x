@@ -7,11 +7,12 @@
 #import <YouTubeHeader/ELMNodeFactory.h>
 #import <YouTubeHeader/ELMTextNode.h>
 #import <YouTubeHeader/ELMTouchCommandPropertiesHandler.h>
-#import <YouTubeHeader/MDXScreenDiscoveryManager.h>
+// #import <YouTubeHeader/MDXScreenDiscoveryManager.h>
 #import <YouTubeHeader/SRLRegistry.h>
 #import <YouTubeHeader/UIImage+YouTube.h>
 #import <YouTubeHeader/YTAutoplayController.h>
 #import <YouTubeHeader/YTCommandResponderEvent.h>
+#import <YouTubeHeader/YTCommonUtils.h>
 #import <YouTubeHeader/YTICompactLinkRenderer.h>
 #import <YouTubeHeader/YTICoWatchWatchEndpointWrapperCommand.h>
 #import <YouTubeHeader/YTIElementRenderer.h>
@@ -21,7 +22,7 @@
 #import <YouTubeHeader/YTIPlaylistPanelRenderer.h>
 #import <YouTubeHeader/YTIPlaylistPanelVideoRenderer.h>
 #import <YouTubeHeader/YTIReelPlayerOverlayRenderer.h>
-#import <YouTubeHeader/YTNonCriticalStartupTelemetricSmartScheduler.h>
+// #import <YouTubeHeader/YTNonCriticalStartupTelemetricSmartScheduler.h>
 #import <YouTubeHeader/YTPivotBarItemView.h>
 #import <YouTubeHeader/YTPlaylistPanelProminentThumbnailVideoCellController.h>
 #import <YouTubeHeader/YTPlaylistPanelSectionController.h>
@@ -407,10 +408,44 @@ static YTIcon getIconType(YTIIcon *self) {
 
 %group PlaylistPageRefresh
 
-BOOL (*YTPlaylistPageRefreshSupported)(void) = NULL;
-%hookf(BOOL, YTPlaylistPageRefreshSupported) {
-    return YES;
+BOOL overrideIsIPad = NO;
+
+%hook YTCommonUtils
+
++ (BOOL)isIPad {
+    return overrideIsIPad ? NO : %orig;
 }
+
+%end
+
+%hook YTIPlaylistHeaderRenderer
+
++ (id)playlistHeaderRendererWithOfflinePlaylist:(id)arg1 firstVideoID:(id)arg2 firstVideoIndex:(NSUInteger)arg3 shuffleStartVideoID:(id)arg4 shuffleStartIndex:(NSUInteger)arg5 useOfflineWatchNavigationEndpoint:(BOOL)arg6 {
+    overrideIsIPad = YES; id ret = %orig; return ret;
+}
+
+%end
+
+%hook YTOverflowingButtonsView
+
+- (id)initWithFrame:(CGRect)frame { overrideIsIPad = YES; id ret = %orig; return ret; }
+
+%end
+
+%hook YTPlaylistHeaderView
+
+- (id)initWithParentResponder:(id)arg1 { overrideIsIPad = YES; id ret = %orig; return ret; }
+
+%end
+
+%hook YTPlaylistHeaderViewController
+
+- (void)loadWithModel:(id)arg1 { overrideIsIPad = YES; %orig; overrideIsIPad = NO; }
+- (void)didTapDescriptionPlaylist:(id)arg1 { overrideIsIPad = YES; %orig; overrideIsIPad = NO; }
+- (void)didDeleteOfflinePlaylistWithPlaylistID:(id)arg1 { overrideIsIPad = YES; %orig; overrideIsIPad = NO; }
+- (void)refreshOfflinePlaylistHeader { overrideIsIPad = YES; %orig; overrideIsIPad = NO; }
+
+%end
 
 %end
 
@@ -497,38 +532,38 @@ static GPBExtensionDescriptor *getCoWatchEndpointWrapperCommandDescriptor() {
 
 #pragma mark - Fix app crash on launch where there are TVs in the network?
 
-%group MDX
+// %group MDX
 
-YTNonCriticalStartupTelemetricSmartScheduler *(*InjectOptionalYTNonCriticalStartupScheduler)(void);
-BOOL disableMDXScreenDiscoveryManagerInit = NO;
+// YTNonCriticalStartupTelemetricSmartScheduler *(*InjectOptionalYTNonCriticalStartupScheduler)(void);
+// BOOL disableMDXScreenDiscoveryManagerInit = NO;
 
-%hook MDXScreenDiscoveryManager
+// %hook MDXScreenDiscoveryManager
 
-- (id)init {
-    return disableMDXScreenDiscoveryManagerInit ? nil : %orig;
-}
+// - (id)init {
+//     return disableMDXScreenDiscoveryManagerInit ? nil : %orig;
+// }
 
-%end
+// %end
 
-%hook MDXRealServices
+// %hook MDXRealServices
 
-- (void)scheduleStartUpActions {
-    YTNonCriticalStartupTelemetricSmartScheduler *scheduler = InjectOptionalYTNonCriticalStartupScheduler();
-    [scheduler schedule:19 withBlock:^{
-        [%c(MDXScreenDiscoveryManager) setSharedInstance:[%c(MDXScreenDiscoveryManager) new]];
-    }];
-    %orig;
-}
+// - (void)scheduleStartUpActions {
+//     YTNonCriticalStartupTelemetricSmartScheduler *scheduler = InjectOptionalYTNonCriticalStartupScheduler();
+//     [scheduler schedule:19 withBlock:^{
+//         [%c(MDXScreenDiscoveryManager) setSharedInstance:[%c(MDXScreenDiscoveryManager) new]];
+//     }];
+//     %orig;
+// }
 
-- (void)createSharedSingletons {
-    disableMDXScreenDiscoveryManagerInit = YES;
-    %orig;
-    disableMDXScreenDiscoveryManagerInit = NO;
-}
+// - (void)createSharedSingletons {
+//     disableMDXScreenDiscoveryManagerInit = YES;
+//     %orig;
+//     disableMDXScreenDiscoveryManagerInit = NO;
+// }
 
-%end
+// %end
 
-%end
+// %end
 
 #pragma mark - Improve general JS element compatibility
 
@@ -582,13 +617,12 @@ NSBundle *TweakBundle() {
         [defaults setBool:YES forKey:RYDUseItsDataKey];
         [defaults synchronize];
     }
-    YTPlaylistPageRefreshSupported = MSFindSymbol(ref, "_YTPlaylistPageRefreshSupported");
-    if (YTPlaylistPageRefreshSupported) {
+    if ([%c(YTCommonUtils) isIPad]) {
         %init(PlaylistPageRefresh);
     }
-    InjectOptionalYTNonCriticalStartupScheduler = MSFindSymbol(ref, "_InjectOptionalYTNonCriticalStartupScheduler");
-    if (InjectOptionalYTNonCriticalStartupScheduler) {
-        %init(MDX);
-    }
+    // InjectOptionalYTNonCriticalStartupScheduler = MSFindSymbol(ref, "_InjectOptionalYTNonCriticalStartupScheduler");
+    // if (InjectOptionalYTNonCriticalStartupScheduler) {
+    //     %init(MDX);
+    // }
     %init;
 }
