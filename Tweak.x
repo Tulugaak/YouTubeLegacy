@@ -12,7 +12,6 @@
 #import <YouTubeHeader/UIImage+YouTube.h>
 #import <YouTubeHeader/YTAutoplayController.h>
 #import <YouTubeHeader/YTCommandResponderEvent.h>
-#import <YouTubeHeader/YTCommonUtils.h>
 #import <YouTubeHeader/YTICompactLinkRenderer.h>
 #import <YouTubeHeader/YTICoWatchWatchEndpointWrapperCommand.h>
 #import <YouTubeHeader/YTIElementRenderer.h>
@@ -408,44 +407,10 @@ static YTIcon getIconType(YTIIcon *self) {
 
 %group PlaylistPageRefresh
 
-BOOL overrideIsIPad = NO;
-
-%hook YTCommonUtils
-
-+ (BOOL)isIPad {
-    return overrideIsIPad ? NO : %orig;
+BOOL (*YTPlaylistPageRefreshSupported)(void) = NULL;
+%hookf(BOOL, YTPlaylistPageRefreshSupported) {
+    return YES;
 }
-
-%end
-
-%hook YTIPlaylistHeaderRenderer
-
-+ (id)playlistHeaderRendererWithOfflinePlaylist:(id)arg1 firstVideoID:(id)arg2 firstVideoIndex:(NSUInteger)arg3 shuffleStartVideoID:(id)arg4 shuffleStartIndex:(NSUInteger)arg5 useOfflineWatchNavigationEndpoint:(BOOL)arg6 {
-    overrideIsIPad = YES; id ret = %orig; return ret;
-}
-
-%end
-
-%hook YTOverflowingButtonsView
-
-- (id)initWithFrame:(CGRect)frame { overrideIsIPad = YES; id ret = %orig; return ret; }
-
-%end
-
-%hook YTPlaylistHeaderView
-
-- (id)initWithParentResponder:(id)arg1 { overrideIsIPad = YES; id ret = %orig; return ret; }
-
-%end
-
-%hook YTPlaylistHeaderViewController
-
-- (void)loadWithModel:(id)arg1 { overrideIsIPad = YES; %orig; overrideIsIPad = NO; }
-- (void)didTapDescriptionPlaylist:(id)arg1 { overrideIsIPad = YES; %orig; overrideIsIPad = NO; }
-- (void)didDeleteOfflinePlaylistWithPlaylistID:(id)arg1 { overrideIsIPad = YES; %orig; overrideIsIPad = NO; }
-- (void)refreshOfflinePlaylistHeader { overrideIsIPad = YES; %orig; overrideIsIPad = NO; }
-
-%end
 
 %end
 
@@ -617,7 +582,8 @@ NSBundle *TweakBundle() {
         [defaults setBool:YES forKey:RYDUseItsDataKey];
         [defaults synchronize];
     }
-    if ([%c(YTCommonUtils) isIPad]) {
+    YTPlaylistPageRefreshSupported = MSFindSymbol(ref, "_YTPlaylistPageRefreshSupported");
+    if (YTPlaylistPageRefreshSupported) {
         %init(PlaylistPageRefresh);
     }
     // InjectOptionalYTNonCriticalStartupScheduler = MSFindSymbol(ref, "_InjectOptionalYTNonCriticalStartupScheduler");
