@@ -9,7 +9,7 @@
 #import <YouTubeHeader/ELMTouchCommandPropertiesHandler.h>
 // #import <YouTubeHeader/MDXScreenDiscoveryManager.h>
 #import <YouTubeHeader/SRLRegistry.h>
-#import <YouTubeHeader/UIImage+YouTube.h>
+#import <YouTubeHeader/YTAlertView.h>
 #import <YouTubeHeader/YTAutoplayController.h>
 #import <YouTubeHeader/YTCommandResponderEvent.h>
 #import <YouTubeHeader/YTICompactLinkRenderer.h>
@@ -37,12 +37,14 @@
 
 #define DidApplyDefaultSettingsKey @"YTL_DidApplyDefaultSettings"
 #define DidApplyDefaultSettings2Key @"YTL_DidApplyDefaultSettings2"
+#define DidShowInformationAlertKey @"YTL_DidShowInformationAlert"
 #define YouSpeedEnabledKey @"YTVideoOverlay-YouSpeed-Enabled"
 #define YouSpeedButtonPositionKey @"YTVideoOverlay-YouSpeed-Position"
 #define RYDUseItsDataKey @"RYD-USE-LIKE-DATA"
 
 #define TweakName @"YouTubeLegacy"
 #define _LOC(b, x) [b localizedStringForKey:x value:nil table:nil]
+#define LOC(x) _LOC(tweakBundle, x)
 
 #pragma mark - Fix app crash on launch
 
@@ -332,7 +334,11 @@ static void setYouTabIcon(YTPivotBarItemView *self, YTIPivotBarItemRenderer *ren
     if (url == nil) return;
     UIImage *image = [UIImage imageWithData:[NSData dataWithContentsOfURL:url]];
     if (image == nil) return;
-    image = [image yt_imageScaledToSize:CGSizeMake(24, 24)];
+    CGFloat size = 24;
+    UIGraphicsBeginImageContextWithOptions(CGSizeMake(size, size), NO, 0);
+    [image drawInRect:CGRectMake(0, 0, size, size)];
+    image = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
     [navigationButton setImage:image forState:UIControlStateNormal];
     [navigationButton setImage:image forState:UIControlStateHighlighted];
     navigationButton.imageView.layer.cornerRadius = 12;
@@ -368,6 +374,8 @@ static YTIcon getIconType(YTIIcon *self) {
     YTIcon iconType = getIconType(self);
     if (iconType == YT_CLAPPERBOARD) // Movie icon in You page
         self.iconType = YT_MOVIES;
+    else if (iconType == YT_SELL) // Purchases icon in You page
+        self.iconType = YT_PURCHASES;
     return %orig;
 }
 
@@ -581,6 +589,16 @@ NSBundle *TweakBundle() {
         [defaults setBool:YES forKey:DidApplyDefaultSettings2Key];
         [defaults setBool:YES forKey:RYDUseItsDataKey];
         [defaults synchronize];
+    }
+    if (![defaults boolForKey:DidShowInformationAlertKey]) {
+        [defaults setBool:YES forKey:DidShowInformationAlertKey];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            NSBundle *tweakBundle = TweakBundle();
+            YTAlertView *alertView = [%c(YTAlertView) infoDialog];
+            alertView.title = TweakName;
+            alertView.subtitle = LOC(@"TWEAK_INFORMATION");
+            [alertView show];
+        });
     }
     YTPlaylistPageRefreshSupported = MSFindSymbol(ref, "_YTPlaylistPageRefreshSupported");
     if (YTPlaylistPageRefreshSupported) {
