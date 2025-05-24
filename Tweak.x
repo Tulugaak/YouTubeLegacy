@@ -9,6 +9,7 @@
 #import <YouTubeHeader/ELMTouchCommandPropertiesHandler.h>
 // #import <YouTubeHeader/MDXScreenDiscoveryManager.h>
 #import <YouTubeHeader/SRLRegistry.h>
+#import <YouTubeHeader/YTActionSheetAction.h>
 #import <YouTubeHeader/YTAlertView.h>
 #import <YouTubeHeader/YTAutoplayController.h>
 #import <YouTubeHeader/YTCommandResponderEvent.h>
@@ -21,6 +22,7 @@
 #import <YouTubeHeader/YTIPlaylistPanelRenderer.h>
 #import <YouTubeHeader/YTIPlaylistPanelVideoRenderer.h>
 #import <YouTubeHeader/YTIReelPlayerOverlayRenderer.h>
+#import <YouTubeHeader/YTMainAppVideoPlayerOverlayViewController.h>
 // #import <YouTubeHeader/YTNonCriticalStartupTelemetricSmartScheduler.h>
 #import <YouTubeHeader/YTPivotBarItemView.h>
 #import <YouTubeHeader/YTPlaylistPanelProminentThumbnailVideoCellController.h>
@@ -191,7 +193,7 @@ static YTIMenuItemSupportedRenderers *createMenuRenderer(YTICommand *command, NS
 
 %hook YTMenuController
 
-- (NSMutableArray *)actionsForRenderers:(NSMutableArray <YTIMenuItemSupportedRenderers *> *)renderers fromView:(UIView *)view entry:(id)entry shouldLogItems:(BOOL)shouldLogItems firstResponder:(id)firstResponder {
+- (NSMutableArray <YTActionSheetAction *> *)actionsForRenderers:(NSMutableArray <YTIMenuItemSupportedRenderers *> *)renderers fromView:(UIView *)view entry:(id)entry shouldLogItems:(BOOL)shouldLogItems firstResponder:(id)firstResponder {
     HBLogDebug(@"actionsForRenderers: %@", renderers);
     HBLogDebug(@"view: %@", view);
     HBLogDebug(@"entry: %@", entry);
@@ -216,7 +218,22 @@ static YTIMenuItemSupportedRenderers *createMenuRenderer(YTICommand *command, NS
         YTIMenuItemSupportedRenderers *menuItemRenderers = createMenuRenderer(command, switchAccountText, @"SwitchAccount", 182);
         [renderers insertObject:menuItemRenderers atIndex:0];
     }
-    return %orig(renderers, view, entry, shouldLogItems, firstResponder);
+    NSMutableArray <YTActionSheetAction *> *actions = %orig(renderers, view, entry, shouldLogItems, firstResponder);
+    NSUInteger audioTrackIndex = [renderers indexOfObjectPassingTest:^BOOL(YTIMenuItemSupportedRenderers *renderer, NSUInteger idx, BOOL *stop) {
+        YTIMenuItemSupportedRenderersElementRendererCompatibilityOptionsExtension *extension = (YTIMenuItemSupportedRenderersElementRendererCompatibilityOptionsExtension *)[renderer.elementRenderer.compatibilityOptions messageForFieldNumber:396644439];
+        BOOL isAudioTrack = [extension.menuItemIdentifier isEqualToString:@"menu_item_audio_track"];
+        if (isAudioTrack) *stop = YES;
+        return isAudioTrack;
+    }];
+    if (audioTrackIndex != NSNotFound) {
+        YTActionSheetAction *action = actions[audioTrackIndex];
+        action.handler = ^{
+            [(YTMainAppVideoPlayerOverlayViewController *)firstResponder didPressAudioTrackSwitch:view];
+        };
+        UIView *elementView = [action.button valueForKey:@"_elementView"];
+        elementView.userInteractionEnabled = NO;
+    }
+    return actions;
 }
 
 %end
