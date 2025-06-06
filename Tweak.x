@@ -40,6 +40,7 @@
 #define DidApplyDefaultSettingsKey @"YTL_DidApplyDefaultSettings"
 #define DidApplyDefaultSettings2Key @"YTL_DidApplyDefaultSettings2"
 #define DidShowInformationAlertKey @"YTL_DidShowInformationAlert"
+#define DidShowInformationAlert2Key @"YTL_DidShowInformationAlert2"
 #define YouSpeedEnabledKey @"YTVideoOverlay-YouSpeed-Enabled"
 #define YouSpeedButtonPositionKey @"YTVideoOverlay-YouSpeed-Position"
 #define RYDUseItsDataKey @"RYD-USE-LIKE-DATA"
@@ -191,6 +192,22 @@ static YTIMenuItemSupportedRenderers *createMenuRenderer(YTICommand *command, NS
     return menuItemRenderers;
 }
 
+static void overrideMenuItem(NSMutableArray <YTIMenuItemSupportedRenderers *> *renderers, NSMutableArray <YTActionSheetAction *> *actions, NSString *menuItemIdentifier, void (^handler)(void)) {
+    NSUInteger index = [renderers indexOfObjectPassingTest:^BOOL(YTIMenuItemSupportedRenderers *renderer, NSUInteger idx, BOOL *stop) {
+        if (![renderer respondsToSelector:@selector(elementRenderer)]) return NO;
+        YTIMenuItemSupportedRenderersElementRendererCompatibilityOptionsExtension *extension = (YTIMenuItemSupportedRenderersElementRendererCompatibilityOptionsExtension *)[renderer.elementRenderer.compatibilityOptions messageForFieldNumber:396644439];
+        BOOL isMenuItem = [extension.menuItemIdentifier isEqualToString:menuItemIdentifier];
+        if (isMenuItem) *stop = YES;
+        return isMenuItem;
+    }];
+    if (index != NSNotFound) {
+        YTActionSheetAction *action = actions[index];
+        action.handler = handler;
+        UIView *elementView = [action.button valueForKey:@"_elementView"];
+        elementView.userInteractionEnabled = NO;
+    }
+}
+
 %hook YTMenuController
 
 - (NSMutableArray <YTActionSheetAction *> *)actionsForRenderers:(NSMutableArray <YTIMenuItemSupportedRenderers *> *)renderers fromView:(UIView *)view entry:(id)entry shouldLogItems:(BOOL)shouldLogItems firstResponder:(id)firstResponder {
@@ -219,20 +236,9 @@ static YTIMenuItemSupportedRenderers *createMenuRenderer(YTICommand *command, NS
         [renderers insertObject:menuItemRenderers atIndex:0];
     }
     NSMutableArray <YTActionSheetAction *> *actions = %orig(renderers, view, entry, shouldLogItems, firstResponder);
-    NSUInteger audioTrackIndex = [renderers indexOfObjectPassingTest:^BOOL(YTIMenuItemSupportedRenderers *renderer, NSUInteger idx, BOOL *stop) {
-        YTIMenuItemSupportedRenderersElementRendererCompatibilityOptionsExtension *extension = (YTIMenuItemSupportedRenderersElementRendererCompatibilityOptionsExtension *)[renderer.elementRenderer.compatibilityOptions messageForFieldNumber:396644439];
-        BOOL isAudioTrack = [extension.menuItemIdentifier isEqualToString:@"menu_item_audio_track"];
-        if (isAudioTrack) *stop = YES;
-        return isAudioTrack;
-    }];
-    if (audioTrackIndex != NSNotFound) {
-        YTActionSheetAction *action = actions[audioTrackIndex];
-        action.handler = ^{
-            [(YTMainAppVideoPlayerOverlayViewController *)firstResponder didPressAudioTrackSwitch:view];
-        };
-        UIView *elementView = [action.button valueForKey:@"_elementView"];
-        elementView.userInteractionEnabled = NO;
-    }
+    overrideMenuItem(renderers, actions, @"menu_item_audio_track", ^{
+        [(YTMainAppVideoPlayerOverlayViewController *)firstResponder didPressAudioTrackSwitch:view];
+    });
     return actions;
 }
 
@@ -351,9 +357,9 @@ static void setYouTabIcon(YTPivotBarItemView *self, YTIPivotBarItemRenderer *ren
     if (url == nil) return;
     UIImage *image = [UIImage imageWithData:[NSData dataWithContentsOfURL:url]];
     if (image == nil) return;
-    CGFloat size = 24;
-    UIGraphicsBeginImageContextWithOptions(CGSizeMake(size, size), NO, 0);
-    [image drawInRect:CGRectMake(0, 0, size, size)];
+    CGRect imageRect = CGRectMake(0, 0, 24, 24);
+    UIGraphicsBeginImageContextWithOptions(imageRect.size, NO, 0);
+    [image drawInRect:imageRect];
     image = UIGraphicsGetImageFromCurrentImageContext();
     UIGraphicsEndImageContext();
     [navigationButton setImage:image forState:UIControlStateNormal];
@@ -576,7 +582,7 @@ NSBundle *TweakBundle() {
 
 %end
 
-#pragma mark - Debug ELM
+#pragma mark - Debug
 
 // %hook YTELMLogger
 
@@ -584,6 +590,12 @@ NSBundle *TweakBundle() {
 //     HBLogInfo(@"logErrorEvent: %@", event);
 //     %orig;
 // }
+
+// %end
+
+// %hook YTSafeModeController
+
+// - (void)setupAndCheckForCrashLoop {}
 
 // %end
 
@@ -595,6 +607,11 @@ NSBundle *TweakBundle() {
     NSBundle *moduleFrameworkBundle = [NSBundle bundleWithPath:bundlePath];
     NSString *version = [moduleFrameworkBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
     if ([version compare:@"19.01.1" options:NSNumericSearch] != NSOrderedAscending) return;
+    NSBundle *mainBundle = [NSBundle mainBundle];
+    NSString *mainVersion = [mainBundle objectForInfoDictionaryKey:@"CFBundleVersion"];
+    NSString *mainShortVersion = [mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
+    BOOL infoPlistLikelyModified = [version compare:mainVersion options:NSNumericSearch] != NSOrderedSame
+        || [version compare:mainShortVersion options:NSNumericSearch] != NSOrderedSame;
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     if (![defaults boolForKey:DidApplyDefaultSettingsKey]) {
         [defaults setBool:YES forKey:DidApplyDefaultSettingsKey];
@@ -607,13 +624,22 @@ NSBundle *TweakBundle() {
         [defaults setBool:YES forKey:RYDUseItsDataKey];
         [defaults synchronize];
     }
+    NSBundle *tweakBundle = TweakBundle();
     if (![defaults boolForKey:DidShowInformationAlertKey]) {
         [defaults setBool:YES forKey:DidShowInformationAlertKey];
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            NSBundle *tweakBundle = TweakBundle();
             YTAlertView *alertView = [%c(YTAlertView) infoDialog];
             alertView.title = TweakName;
             alertView.subtitle = LOC(@"TWEAK_INFORMATION");
+            [alertView show];
+        });
+    }
+    if (infoPlistLikelyModified && ![defaults boolForKey:DidShowInformationAlert2Key]) {
+        [defaults setBool:YES forKey:DidShowInformationAlert2Key];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            YTAlertView *alertView = [%c(YTAlertView) infoDialog];
+            alertView.title = TweakName;
+            alertView.subtitle = LOC(@"INCONSISTENT_VERSION_INFORMATION");
             [alertView show];
         });
     }

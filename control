@@ -1,6 +1,6 @@
 Package: com.ps.ytlegacy
 Name: YouTube Legacy
-Version: 1.6.4
+Version: 1.6.5
 Architecture: iphoneos-arm
 Description: Attempts to make old YouTube versions work again.
 Maintainer: PoomSmart
