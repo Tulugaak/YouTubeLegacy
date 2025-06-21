@@ -1,4 +1,6 @@
 #import <dlfcn.h>
+#import <sys/sysctl.h>
+#import <version.h>
 #import <HBLog.h>
 #import <PSHeader/Misc.h>
 #import <YouTubeHeader/_ASDisplayView.h>
@@ -44,6 +46,8 @@
 #define YouSpeedEnabledKey @"YTVideoOverlay-YouSpeed-Enabled"
 #define YouSpeedButtonPositionKey @"YTVideoOverlay-YouSpeed-Position"
 #define RYDUseItsDataKey @"RYD-USE-LIKE-DATA"
+
+#define IOS_BUILD "19H390"
 
 #define TweakName @"YouTubeLegacy"
 #define _LOC(b, x) [b localizedStringForKey:x value:nil table:nil]
@@ -582,6 +586,44 @@ NSBundle *TweakBundle() {
 
 %end
 
+#pragma mark - Spoof iOS version
+
+%group Spoofing
+
+%hook UIDevice
+
+- (NSString *)systemVersion {
+    return @"15.8.4";
+}
+
+%end
+
+%hook NSProcessInfo
+
+- (NSOperatingSystemVersion)operatingSystemVersion {
+    NSOperatingSystemVersion version;
+    version.majorVersion = 15;
+    version.minorVersion = 8;
+    version.patchVersion = 4;
+    return version;
+}
+
+%end
+
+%hookf(int, sysctlbyname, const char *name, void *oldp, size_t *oldlenp, void *newp, size_t newlen) {
+    if (strcmp(name, "kern.osversion") == 0) {
+        int ret = %orig;
+        if (oldp) {
+            strcpy((char *)oldp, IOS_BUILD);
+            *oldlenp = strlen(IOS_BUILD);
+        }
+        return ret;
+    }
+    return %orig;
+}
+
+%end
+
 #pragma mark - Debug
 
 // %hook YTELMLogger
@@ -642,6 +684,9 @@ NSBundle *TweakBundle() {
             alertView.subtitle = LOC(@"INCONSISTENT_VERSION_INFORMATION");
             [alertView show];
         });
+    }
+    if (!IS_IOS_OR_NEWER(iOS_15_0)) {
+        %init(Spoofing);
     }
     YTPlaylistPageRefreshSupported = MSFindSymbol(ref, "_YTPlaylistPageRefreshSupported");
     if (YTPlaylistPageRefreshSupported) {
