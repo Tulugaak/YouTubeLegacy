@@ -19,11 +19,14 @@
 #import <YouTubeHeader/YTICoWatchWatchEndpointWrapperCommand.h>
 #import <YouTubeHeader/YTIElementRenderer.h>
 #import <YouTubeHeader/YTIInlinePlaybackRenderer.h>
+#import <YouTubeHeader/YTIItemSectionRenderer.h>
 #import <YouTubeHeader/YTIMenuItemSupportedRenderers.h>
+#import <YouTubeHeader/YTInnerTubeCollectionViewController.h>
 #import <YouTubeHeader/YTIPivotBarItemRenderer.h>
 #import <YouTubeHeader/YTIPlaylistPanelRenderer.h>
 #import <YouTubeHeader/YTIPlaylistPanelVideoRenderer.h>
 #import <YouTubeHeader/YTIReelPlayerOverlayRenderer.h>
+#import <YouTubeHeader/YTIShelfRenderer.h>
 #import <YouTubeHeader/YTMainAppVideoPlayerOverlayViewController.h>
 // #import <YouTubeHeader/YTNonCriticalStartupTelemetricSmartScheduler.h>
 #import <YouTubeHeader/YTPivotBarItemView.h>
@@ -54,6 +57,12 @@
 #define LOC(x) _LOC(tweakBundle, x)
 
 #pragma mark - Spoof app version
+
+%hook YTGlobalConfig
+
+- (BOOL)shouldBlockUpgradeDialog { return YES; }
+
+%end
 
 %hook YTVersionUtils
 
@@ -603,6 +612,58 @@ NSBundle *TweakBundle() {
 - (NSBundle *)embeddedPayloadBundle {
     NSBundle *bundle = TweakBundle();
     return bundle ?: %orig;
+}
+
+%end
+
+#pragma mark - Remove Playables
+
+static BOOL isPlayableGame(YTIElementRenderer *elementRenderer) {
+    NSString *description = [elementRenderer description];
+    return [description containsString:@"https://m.youtube.com/playables/"];
+}
+
+static NSMutableArray <YTIItemSectionRenderer *> *filteredArray(NSArray <YTIItemSectionRenderer *> *array) {
+    NSMutableArray <YTIItemSectionRenderer *> *newArray = [array mutableCopy];
+    NSIndexSet *removeIndexes = [newArray indexesOfObjectsPassingTest:^BOOL(YTIItemSectionRenderer *sectionRenderer, NSUInteger idx, BOOL *stop) {
+        if ([sectionRenderer isKindOfClass:%c(YTIShelfRenderer)]) {
+            YTIShelfSupportedRenderers *content = ((YTIShelfRenderer *)sectionRenderer).content;
+            YTIHorizontalListRenderer *horizontalListRenderer = content.horizontalListRenderer;
+            NSMutableArray <YTIHorizontalListSupportedRenderers *> *itemsArray = horizontalListRenderer.itemsArray;
+            NSIndexSet *removeItemsArrayIndexes = [itemsArray indexesOfObjectsPassingTest:^BOOL(YTIHorizontalListSupportedRenderers *horizontalListSupportedRenderers, NSUInteger idx2, BOOL *stop2) {
+                YTIElementRenderer *elementRenderer = horizontalListSupportedRenderers.elementRenderer;
+                return isPlayableGame(elementRenderer);
+            }];
+            [itemsArray removeObjectsAtIndexes:removeItemsArrayIndexes];
+        }
+        if (![sectionRenderer isKindOfClass:%c(YTIItemSectionRenderer)])
+            return NO;
+        NSMutableArray <YTIItemSectionSupportedRenderers *> *contentsArray = sectionRenderer.contentsArray;
+        if (contentsArray.count > 1) {
+            NSIndexSet *removeContentsArrayIndexes = [contentsArray indexesOfObjectsPassingTest:^BOOL(YTIItemSectionSupportedRenderers *sectionSupportedRenderers, NSUInteger idx2, BOOL *stop2) {
+                YTIElementRenderer *elementRenderer = sectionSupportedRenderers.elementRenderer;
+                return isPlayableGame(elementRenderer);
+            }];
+            [contentsArray removeObjectsAtIndexes:removeContentsArrayIndexes];
+        }
+        YTIItemSectionSupportedRenderers *firstObject = [contentsArray firstObject];
+        YTIElementRenderer *elementRenderer = firstObject.elementRenderer;
+        return isPlayableGame(elementRenderer);
+    }];
+    [newArray removeObjectsAtIndexes:removeIndexes];
+    return newArray;
+}
+
+%hook YTInnerTubeCollectionViewController
+
+- (void)displaySectionsWithReloadingSectionControllerByRenderer:(id)renderer {
+    NSMutableArray *sectionRenderers = [self valueForKey:@"_sectionRenderers"];
+    [self setValue:filteredArray(sectionRenderers) forKey:@"_sectionRenderers"];
+    %orig;
+}
+
+- (void)addSectionsFromArray:(NSArray <YTIItemSectionRenderer *> *)array {
+    %orig(filteredArray(array));
 }
 
 %end
