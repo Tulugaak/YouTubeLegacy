@@ -498,11 +498,23 @@ static GPBExtensionDescriptor *getCoWatchEndpointWrapperCommandDescriptor() {
     return [coWatchCommandClass descriptor];
 }
 
+static YTICommand *legacyGetWatchEndpoint(YTICommand *command) {
+    GPBMessage *message = [[command messageForFieldNumber:462702848] messageForFieldNumber:1];
+    return [%c(YTICommand) parseFromData:[message data]];
+}
+
+static YTICommand *getWatchEndpoint(YTICommand *command) {
+    GPBExtensionDescriptor *coWatchCommand = getCoWatchEndpointWrapperCommandDescriptor();
+    if ([command hasExtension:coWatchCommand])
+        return [(YTICoWatchWatchEndpointWrapperCommand *)[command getExtension:coWatchCommand] watchEndpoint];
+    return legacyGetWatchEndpoint(command);
+}
+
 %hook YTAutoplayController
 
 - (id)navEndpointHavingWatchEndpointOrNil:(YTICommand *)endpoint {
     return [endpoint hasActiveOnlineOrOfflineWatchEndpoint]
-        || [endpoint hasExtension:getCoWatchEndpointWrapperCommandDescriptor()]
+        || getWatchEndpoint(endpoint) != nil
         ? endpoint : nil;
 }
 
@@ -518,13 +530,14 @@ static GPBExtensionDescriptor *getCoWatchEndpointWrapperCommandDescriptor() {
 
 - (void)sendWatchTransitionWithNavEndpoint:(YTICommand *)navEndpoint watchEndpointSource:(int)watchEndpointSource {
     if (![navEndpoint hasActiveOnlineOrOfflineWatchEndpoint]) {
-        GPBExtensionDescriptor *coWatchCommand = getCoWatchEndpointWrapperCommandDescriptor();
-        if ([navEndpoint hasExtension:coWatchCommand]) {
-            YTICoWatchWatchEndpointWrapperCommand *extension = [navEndpoint getExtension:coWatchCommand];
-            %orig(extension.watchEndpoint, watchEndpointSource);
+        YTICommand *watchEndpoint = getWatchEndpoint(navEndpoint);
+        if (watchEndpoint) {
+            HBLogDebug(@"sendWatchTransitionWithNavEndpoint: %@, watchEndpointSource: %d", watchEndpoint, watchEndpointSource);
+            %orig(watchEndpoint, watchEndpointSource);
             return;
         }
     }
+    HBLogDebug(@"original sendWatchTransitionWithNavEndpoint: %@, watchEndpointSource: %d", navEndpoint, watchEndpointSource);
     %orig;
 }
 
@@ -540,13 +553,14 @@ static GPBExtensionDescriptor *getCoWatchEndpointWrapperCommandDescriptor() {
 
 - (void)sendWatchTransitionWithNavEndpoint:(YTICommand *)navEndpoint watchEndpointSource:(int)watchEndpointSource {
     if (![navEndpoint hasActiveOnlineOrOfflineWatchEndpoint]) {
-        GPBExtensionDescriptor *coWatchCommand = getCoWatchEndpointWrapperCommandDescriptor();
-        if ([navEndpoint hasExtension:coWatchCommand]) {
-            YTICoWatchWatchEndpointWrapperCommand *extension = [navEndpoint getExtension:coWatchCommand];
-            %orig(extension.watchEndpoint, watchEndpointSource);
+        YTICommand *watchEndpoint = getWatchEndpoint(navEndpoint);
+        if (watchEndpoint) {
+            HBLogDebug(@"sendWatchTransitionWithNavEndpoint: %@, watchEndpointSource: %d", watchEndpoint, watchEndpointSource);
+            %orig(watchEndpoint, watchEndpointSource);
             return;
         }
     }
+    HBLogDebug(@"original sendWatchTransitionWithNavEndpoint: %@, watchEndpointSource: %d", navEndpoint, watchEndpointSource);
     %orig;
 }
 
